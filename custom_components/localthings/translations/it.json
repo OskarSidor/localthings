@@ -1652,6 +1652,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Termina alle"
+      },
       "dnd_end": {
         "name": "Fine non disturbare"
       },

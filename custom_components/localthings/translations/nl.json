@@ -1652,6 +1652,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Klaar om"
+      },
       "dnd_end": {
         "name": "Einde niet storen"
       },

@@ -1652,6 +1652,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Fertig um"
+      },
       "dnd_end": {
         "name": "Nicht-stören-Ende"
       },

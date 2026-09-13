@@ -1652,6 +1652,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "종료 시각"
+      },
       "dnd_end": {
         "name": "방해 금지 종료"
       },

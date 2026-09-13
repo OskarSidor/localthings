@@ -8,7 +8,9 @@ from datetime import UTC, datetime, timedelta
 
 from ...catalog import translated_states
 from ..capability import Capability
-from ..entities import BinarySensorDesc, ButtonDesc, NumberDesc, SensorDesc
+from ..entities import BinarySensorDesc, ButtonDesc, NumberDesc, SensorDesc, TimeDesc
+
+_DELAY_END = "x.com.samsung.da.delayEndTime"
 
 _SAMSUNG_STATE_TO_OCF = {
     "Ready": "idle",
@@ -116,16 +118,66 @@ def _format_delay(hours):
 
 
 def _delay_field(rep):
-    """Washer hardware reports the delay-until-start duration under
-    'delayEndTime' instead of 'delayStartTime' (both hold a duration, not a
-    wall-clock time -- see _delay_hours). Write back whichever key the
-    device itself is using; default to delayStartTime for hardware that
-    reports neither yet (matches prior behavior)."""
+    """The delay key this device actually uses, for reads and writes alike.
+
+    Dishwashers report `delayStartTime`, laundry reports `delayEndTime`, and
+    no dump carries both, so the preference between them decides nothing real.
+    It prefers delayStartTime because that is the field whose meaning matches
+    this entity: a delay until the cycle *starts*.
+
+    The fallback is the branch that does get taken: the A51_20 WW6500 washer
+    reports neither key, and falls to delayEndTime because every laundry dump
+    that reports one at all reports that one. Dishwashers never reach it.
+
+    The two are not synonyms, which #427 asked about and this file used to
+    assert they were. `delayEndTime` counts down to the cycle's *end*,
+    measured on hardware in #427: a WD80T634DBE/S7 given a 5 h delay reported
+    `remainingTime` of 05:00:00 during `Delaywash`, not 5 h plus the course.
+    Both still hold a duration rather than a wall-clock time (see
+    _delay_hours). See docs/investigations/laundry-delay-end.md.
+    """
     return (
-        "x.com.samsung.da.delayEndTime"
-        if "x.com.samsung.da.delayEndTime" in rep
-        else "x.com.samsung.da.delayStartTime"
+        "x.com.samsung.da.delayStartTime"
+        if "x.com.samsung.da.delayStartTime" in rep
+        else _DELAY_END
     )
+
+
+def _delay_finish_at(rep):
+    """The clock time a pending delay currently points at.
+
+    Only fixed once the countdown is running: before Start the appliance
+    holds a static duration, so this walks forward with the clock -- which is
+    what the appliance will do, finishing `delayEndTime` after whenever Start
+    is pressed. Reads None during the cycle itself, where the field drops to
+    00:00:00 (#427) and `finish_time` takes over.
+    """
+    total_s = _remaining_seconds(rep.get(_DELAY_END))
+    if not total_s:
+        return None
+    # Whole minutes, for the reason _finish_time rounds.
+    return (datetime.now(UTC) + timedelta(seconds=total_s)).replace(second=0, microsecond=0)
+
+
+def _delay_until(target, now):
+    """Picked wall-clock finish -> the delay in hours that reaches it.
+
+    A target at or before the current minute can only mean tomorrow's; there
+    is no way to express "no delay" from a time picker, which is what
+    delay_start_hours' 0 is for.
+    """
+    now = now.replace(second=0, microsecond=0)
+    finish = now.replace(hour=target.hour, minute=target.minute)
+    if finish <= now:
+        finish += timedelta(days=1)
+    # Both sides carry the same tzinfo, and datetime subtraction skips the
+    # utcoffset adjustment in that case -- so an overnight delay across a DST
+    # change would come out a wall-clock hour off the real elapsed time the
+    # appliance counts down. Convert first; _delay_finish_at reads back in
+    # real time too, so the two would otherwise disagree by that hour.
+    if finish.tzinfo is not None:
+        finish, now = finish.astimezone(UTC), now.astimezone(UTC)
+    return (finish - now).total_seconds() / 3600
 
 
 def _finish_time(rep):
@@ -250,13 +302,25 @@ OPERATIONAL_STATE = Capability(
             native_min=0,
             native_max=24,
             step=1,
-            rep_fn=lambda rep: _delay_hours(
-                rep.get("x.com.samsung.da.delayStartTime")
-                or rep.get("x.com.samsung.da.delayEndTime")
-            ),
+            # Same field the write targets: reading one key while writing
+            # another would show a stale value after every set.
+            rep_fn=lambda rep: _delay_hours(rep.get(_delay_field(rep))),
             write_fn=lambda p, rep, href=None: (
                 ["operational", "state", "vs", "0"],
                 {_delay_field(rep): _format_delay(p)},
+            ),
+        ),
+        TimeDesc(
+            key="delay_finish_at",
+            icon="mdi:clock-end",
+            # Laundry only. Dishwashers delay the start, so on them a finish
+            # picker would be asking for something the field cannot express.
+            exists_fn=lambda rep, resources: _DELAY_END in rep,
+            rep_fn=_delay_finish_at,
+            payload_fn=_delay_until,
+            write_fn=lambda p, rep, href=None: (
+                ["operational", "state", "vs", "0"],
+                {_DELAY_END: _format_delay(p)},
             ),
         ),
         ButtonDesc(
