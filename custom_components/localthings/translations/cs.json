@@ -1535,6 +1535,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Dokončit v"
+      },
       "dnd_end": {
         "name": "Konec režimu Nerušit"
       },

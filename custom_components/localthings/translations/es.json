@@ -1732,6 +1732,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Terminar a las"
+      },
       "dnd_end": {
         "name": "Fin de no molestar"
       },

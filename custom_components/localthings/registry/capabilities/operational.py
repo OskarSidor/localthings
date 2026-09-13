@@ -8,7 +8,9 @@ from datetime import UTC, datetime, timedelta
 
 from ...catalog import translated_states
 from ..capability import Capability
-from ..entities import BinarySensorDesc, ButtonDesc, NumberDesc, SensorDesc
+from ..entities import BinarySensorDesc, ButtonDesc, NumberDesc, SensorDesc, TimeDesc
+
+_DELAY_END = "x.com.samsung.da.delayEndTime"
 
 _SAMSUNG_STATE_TO_OCF = {
     "Ready": "idle",
@@ -124,21 +126,46 @@ def _delay_field(rep):
     whose meaning matches this entity: a delay until the cycle *starts*.
 
     The two are not synonyms, which #427 asked about and this file used to
-    assert they were. `delayEndTime` counts down to the cycle's *end*: the
-    WF80H dump caught mid-`Delaywash` reports `delayEndTime` and
-    `remainingTime` as the same `09:26:00`, and remainingTime runs to
-    completion. That also explains #308, where a delay set to 1 h came back
-    as ~9 h -- an appliance cannot finish sooner than its cycle takes, so a
-    delay-until-end write clamps up to the cycle length.
-
+    assert they were. `delayEndTime` counts down to the cycle's *end*,
+    measured on hardware in #427: a WD80T634DBE/S7 given a 5 h delay reported
+    `remainingTime` of 05:00:00 during `Delaywash`, not 5 h plus the course.
     Both still hold a duration rather than a wall-clock time (see
     _delay_hours). See docs/investigations/laundry-delay-end.md.
     """
     return (
         "x.com.samsung.da.delayStartTime"
         if "x.com.samsung.da.delayStartTime" in rep
-        else "x.com.samsung.da.delayEndTime"
+        else _DELAY_END
     )
+
+
+def _delay_finish_at(rep):
+    """The clock time a pending delay currently points at.
+
+    Only fixed once the countdown is running: before Start the appliance
+    holds a static duration, so this walks forward with the clock -- which is
+    what the appliance will do, finishing `delayEndTime` after whenever Start
+    is pressed. Reads None during the cycle itself, where the field drops to
+    00:00:00 (#427) and `finish_time` takes over.
+    """
+    total_s = _remaining_seconds(rep.get(_DELAY_END))
+    if not total_s:
+        return None
+    # Whole minutes, for the reason _finish_time rounds.
+    return (datetime.now(UTC) + timedelta(seconds=total_s)).replace(second=0, microsecond=0)
+
+
+def _delay_until(target, now):
+    """Picked wall-clock finish -> the delay in hours that reaches it.
+
+    A target at or before the current minute can only mean tomorrow's; there
+    is no way to express "no delay" from a time picker, which is what
+    delay_start_hours' 0 is for.
+    """
+    minutes = (target.hour * 60 + target.minute) - (now.hour * 60 + now.minute)
+    if minutes <= 0:
+        minutes += 24 * 60
+    return minutes / 60.0
 
 
 def _finish_time(rep):
@@ -269,6 +296,19 @@ OPERATIONAL_STATE = Capability(
             write_fn=lambda p, rep, href=None: (
                 ["operational", "state", "vs", "0"],
                 {_delay_field(rep): _format_delay(p)},
+            ),
+        ),
+        TimeDesc(
+            key="delay_finish_at",
+            icon="mdi:clock-end",
+            # Laundry only. Dishwashers delay the start, so on them a finish
+            # picker would be asking for something the field cannot express.
+            exists_fn=lambda rep, resources: _DELAY_END in rep,
+            rep_fn=_delay_finish_at,
+            payload_fn=_delay_until,
+            write_fn=lambda p, rep, href=None: (
+                ["operational", "state", "vs", "0"],
+                {_DELAY_END: _format_delay(p)},
             ),
         ),
         ButtonDesc(

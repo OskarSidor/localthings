@@ -1535,6 +1535,9 @@
       }
     },
     "time": {
+      "delay_finish_at": {
+        "name": "Finish by"
+      },
       "dnd_end": {
         "name": "Do not disturb end"
       },

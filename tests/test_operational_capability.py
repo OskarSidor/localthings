@@ -1,5 +1,7 @@
 """Unit tests for operational state capabilities."""
 
+from datetime import UTC, datetime, time, timedelta
+
 import pytest
 
 from custom_components.localthings.registry.capabilities.operational import (
@@ -7,7 +9,7 @@ from custom_components.localthings.registry.capabilities.operational import (
     _just_finished,
     _new_cycle_running,
 )
-from custom_components.localthings.registry.entities import NumberDesc, SensorDesc
+from custom_components.localthings.registry.entities import NumberDesc, SensorDesc, TimeDesc
 
 
 def test_machine_state_maps_samsung_to_ocf():
@@ -289,3 +291,75 @@ def _delay_hours_of(raw):
     """HH:MM:SS -> fractional hours, mirroring _delay_hours for assertions."""
     h, m, s = (int(x) for x in raw.split(":"))
     return (h * 3600 + m * 60 + s) / 3600.0
+
+
+class TestDelayFinishAt:
+    """The finish-time picker added for #427, where a WD80T634DBE/S7 held a
+    written `03:17:00` exactly and, given 5 h, reported `remainingTime` of
+    05:00:00 during `Delaywash` -- minute-granular, and counting to the end."""
+
+    def _desc(self):
+        return next(
+            e
+            for e in OPERATIONAL_STATE.entities
+            if e.key == "delay_finish_at" and isinstance(e, TimeDesc)
+        )
+
+    def test_only_on_devices_that_delay_the_end(self):
+        """A dishwasher delays the *start*, so a finish picker there would be
+        asking for something delayStartTime cannot express."""
+        desc = self._desc()
+        assert desc.exists_fn is not None
+        assert desc.exists_fn({"x.com.samsung.da.delayEndTime": "00:00:00"}, {})
+        assert not desc.exists_fn({"x.com.samsung.da.delayStartTime": "01:00:00"}, {})
+
+    @pytest.mark.parametrize(
+        "target,now,expected",
+        [
+            (time(13, 30), datetime(2026, 9, 13, 9, 30), "04:00:00"),
+            (time(11, 25), datetime(2026, 9, 13, 9, 30), "01:55:00"),
+            # Minute granularity all the way to the wire -- issue #427 test 1.
+            (time(12, 47), datetime(2026, 9, 13, 9, 30), "03:17:00"),
+            # Earlier than now can only mean tomorrow's.
+            (time(6, 0), datetime(2026, 9, 13, 9, 30), "20:30:00"),
+            (time(9, 30), datetime(2026, 9, 13, 9, 30), "24:00:00"),
+            # Seconds on the clock don't shift the delay off a whole minute.
+            (time(13, 30), datetime(2026, 9, 13, 9, 30, 47), "04:00:00"),
+        ],
+    )
+    def test_picked_time_becomes_the_delay_that_reaches_it(self, target, now, expected):
+        desc = self._desc()
+        assert desc.payload_fn is not None and desc.write_fn is not None
+        result = desc.write_fn(desc.payload_fn(target, now), {"x.com.samsung.da.delayEndTime": ""})
+        assert result is not None
+        path, body = result
+        assert path == ["operational", "state", "vs", "0"]
+        assert body == {"x.com.samsung.da.delayEndTime": expected}
+
+    def test_writes_the_end_key_even_where_delay_field_would_prefer_start(self):
+        """_delay_field prefers delayStartTime for the hypothetical device
+        reporting both; this entity is about the finish either way."""
+        desc = self._desc()
+        rep = {
+            "x.com.samsung.da.delayStartTime": "01:00:00",
+            "x.com.samsung.da.delayEndTime": "02:00:00",
+        }
+        result = desc.write_fn(1.0, rep)
+        assert result is not None
+        _path, body = result
+        assert list(body) == ["x.com.samsung.da.delayEndTime"]
+
+    def test_reads_back_as_the_instant_the_delay_points_at(self):
+        desc = self._desc()
+        assert desc.rep_fn is not None
+        before = datetime.now(UTC)
+        value = desc.rep_fn({"x.com.samsung.da.delayEndTime": "04:00:00"})
+        assert value is not None
+        assert value.second == 0 and value.microsecond == 0
+        assert timedelta(hours=4) - timedelta(minutes=1) <= value - before <= timedelta(hours=4)
+
+    @pytest.mark.parametrize("raw", ["00:00:00", "", None])
+    def test_no_value_without_a_pending_delay(self, raw):
+        """Falls to 00:00:00 once the cycle itself starts (#427), where
+        finish_time takes over."""
+        assert self._desc().rep_fn({"x.com.samsung.da.delayEndTime": raw}) is None

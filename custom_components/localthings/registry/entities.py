@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import time as dt_time
 from typing import Any
 
 WriteFn = Callable[[Any, dict], "tuple[list[str], dict] | None"] | None
@@ -22,6 +23,11 @@ WriteFn = Callable[[Any, dict], "tuple[list[str], dict] | None"] | None
 ValidateFn = Callable[[Any, dict, dict], "str | None"] | None
 DisplayFn = Callable[[Any, dict], Any] | None
 ButtonPayloadFn = Callable[[datetime], Any] | None
+# (picked time, local now) -> the payload write_fn receives, for a control
+# whose device field holds a duration rather than a clock reading. The
+# platform supplies `now` so the registry stays free of HA's timezone
+# handling, the same split ButtonPayloadFn uses.
+TimePayloadFn = Callable[[dt_time, datetime], Any] | None
 
 
 def _identity(v: Any) -> Any:
@@ -142,6 +148,7 @@ class NumberDesc(SamsungEntityDescription):
 @dataclass(frozen=True, kw_only=True)
 class TimeDesc(SamsungEntityDescription):
     write_fn: WriteFn = None
+    payload_fn: TimePayloadFn = None
 
 
 @dataclass(frozen=True, kw_only=True)
