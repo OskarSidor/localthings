@@ -1,6 +1,7 @@
 """Unit tests for operational state capabilities."""
 
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -269,7 +270,7 @@ class TestDelayFieldFallback:
         # And the value the entity displays comes from that same key.
         assert desc.rep_fn(rep) == _delay_hours_of(rep[expected])
 
-    def test_write_targets_delay_start_time_by_default(self):
+    def test_write_targets_delay_start_time_when_that_is_what_device_reports(self):
         from custom_components.localthings.registry.capabilities.operational import (
             OPERATIONAL_STATE,
         )
@@ -349,6 +350,32 @@ class TestDelayFinishAt:
         _path, body = result
         assert list(body) == ["x.com.samsung.da.delayEndTime"]
 
+    @pytest.mark.parametrize(
+        "zone,now,expected,note",
+        [
+            # Europe/Stockholm springs forward 2027-03-28 02:00 -> 03:00, so
+            # 23:00 -> 07:00 is eight hours on the clock but seven in real
+            # time, which is what the appliance counts down.
+            ("Europe/Stockholm", datetime(2027, 3, 27, 23, 0), "07:00:00", "spring forward"),
+            # ...and falls back 2027-10-31 03:00 -> 02:00: nine real hours.
+            ("Europe/Stockholm", datetime(2027, 10, 30, 23, 0), "09:00:00", "fall back"),
+            # An ordinary night is unaffected.
+            ("Europe/Stockholm", datetime(2027, 6, 15, 23, 0), "08:00:00", "no transition"),
+        ],
+    )
+    def test_delay_spans_a_dst_change_in_real_time(self, zone, now, expected, note):
+        """datetime subtraction skips the utcoffset adjustment when both sides
+        share a tzinfo, so wall-clock arithmetic here would send the appliance
+        a duration an hour off what the picker promised."""
+        desc = self._desc()
+        aware = now.replace(tzinfo=ZoneInfo(zone))
+        result = desc.write_fn(
+            desc.payload_fn(time(7, 0), aware), {"x.com.samsung.da.delayEndTime": ""}
+        )
+        assert result is not None
+        _path, body = result
+        assert body == {"x.com.samsung.da.delayEndTime": expected}, note
+
     def test_reads_back_as_the_instant_the_delay_points_at(self):
         desc = self._desc()
         assert desc.rep_fn is not None
@@ -363,3 +390,20 @@ class TestDelayFinishAt:
         """Falls to 00:00:00 once the cycle itself starts (#427), where
         finish_time takes over."""
         assert self._desc().rep_fn({"x.com.samsung.da.delayEndTime": raw}) is None
+
+
+def test_device_reporting_no_delay_key_at_all_writes_the_end_key():
+    """The A51_20 WW6500 washer reports neither key, so it is the one device
+    the fallback actually decides. It takes delayEndTime, the key every
+    laundry dump that reports one at all reports (#427); dishwashers all
+    report delayStartTime and never reach this branch."""
+    desc = next(
+        e
+        for e in OPERATIONAL_STATE.entities
+        if e.key == "delay_start_hours" and isinstance(e, NumberDesc)
+    )
+    assert desc.write_fn is not None
+    result = desc.write_fn(1.5, {"x.com.samsung.da.state": "Ready"})
+    assert result is not None
+    _path, body = result
+    assert body == {"x.com.samsung.da.delayEndTime": "01:30:00"}

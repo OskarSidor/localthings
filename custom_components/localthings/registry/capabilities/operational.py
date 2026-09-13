@@ -121,9 +121,13 @@ def _delay_field(rep):
     """The delay key this device actually uses, for reads and writes alike.
 
     Dishwashers report `delayStartTime`, laundry reports `delayEndTime`, and
-    no dump carries both -- so the preference order only decides the
-    hypothetical overlap. It prefers delayStartTime because that is the field
-    whose meaning matches this entity: a delay until the cycle *starts*.
+    no dump carries both, so the preference between them decides nothing real.
+    It prefers delayStartTime because that is the field whose meaning matches
+    this entity: a delay until the cycle *starts*.
+
+    The fallback is the branch that does get taken: the A51_20 WW6500 washer
+    reports neither key, and falls to delayEndTime because every laundry dump
+    that reports one at all reports that one. Dishwashers never reach it.
 
     The two are not synonyms, which #427 asked about and this file used to
     assert they were. `delayEndTime` counts down to the cycle's *end*,
@@ -162,10 +166,18 @@ def _delay_until(target, now):
     is no way to express "no delay" from a time picker, which is what
     delay_start_hours' 0 is for.
     """
-    minutes = (target.hour * 60 + target.minute) - (now.hour * 60 + now.minute)
-    if minutes <= 0:
-        minutes += 24 * 60
-    return minutes / 60.0
+    now = now.replace(second=0, microsecond=0)
+    finish = now.replace(hour=target.hour, minute=target.minute)
+    if finish <= now:
+        finish += timedelta(days=1)
+    # Both sides carry the same tzinfo, and datetime subtraction skips the
+    # utcoffset adjustment in that case -- so an overnight delay across a DST
+    # change would come out a wall-clock hour off the real elapsed time the
+    # appliance counts down. Convert first; _delay_finish_at reads back in
+    # real time too, so the two would otherwise disagree by that hour.
+    if finish.tzinfo is not None:
+        finish, now = finish.astimezone(UTC), now.astimezone(UTC)
+    return (finish - now).total_seconds() / 3600
 
 
 def _finish_time(rep):
