@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import datetime
 import errno
+import ipaddress
 import json
 import logging
 import re
@@ -1017,6 +1018,11 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_entry_for_mac")
 
         await self.async_set_unique_id(entry.unique_id)
+        # The address the title names moves with the entry; one the user has
+        # made their own stays as it is (see _followed_title). Separate from
+        # the update below because `updates` writes entry data only.
+        if (title := _followed_title(entry, discovery_info.ip)) is not UNDEFINED:
+            self.hass.config_entries.async_update_entry(entry, title=title)
         # Writes the new host and schedules a reload when the address moved.
         # When it hasn't, the sighting still reloads an entry sitting in
         # SETUP_RETRY -- Home Assistant's own handling for a discovery
@@ -1062,7 +1068,7 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during device probe")
                 errors["base"] = "unknown"
             else:
-                if not _identity_matches(entry, info):
+                if not _identity_matches(entry, info, host):
                     _LOGGER.warning(
                         "%s answered as %r, but this entry is registered as %r",
                         host,
@@ -1095,25 +1101,54 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-def _identity_matches(entry: config_entries.ConfigEntry, info: dict) -> bool:
-    """Whether the appliance that just answered is the one this entry is for.
+def _host_keyed(entry: config_entries.ConfigEntry) -> bool:
+    """True for an entry registered against an address rather than an identity.
+
+    `resolve_serial` falls back to the host for a board whose serialNum is a
+    placeholder (issues #83/#189) and `resolve_device_key` falls back with
+    it, so such an entry's stored serial is an address -- which a real
+    serialNum never parses as. Asked of the stored serial rather than of the
+    current host because the two stop agreeing the moment the entry moves:
+    `_resolve_identity` never re-keys a board that reports no `di`, so the
+    key keeps naming the address the entry was created at.
+    """
+    try:
+        ipaddress.ip_address(entry.data.get(CONF_SERIAL) or "")
+    except ValueError:
+        return False
+    return True
+
+
+def _identity_matches(entry: config_entries.ConfigEntry, info: dict, host: str) -> bool:
+    """Whether the appliance that just answered at `host` is the one this
+    entry is for.
 
     The same question `coordinator._resolve_identity` answers on a poll,
     asked before the host is written rather than after: an address typed
     with one digit wrong would otherwise hand this entry's registry rows --
     its entity_ids, history and automations -- to whatever appliance lives
     there. Structured to match that function so the two can't drift: the
-    registered key, else the serial corroborating a regenerated `di`, else a
-    host-keyed entry (issues #83/#189) which has no identity to defend.
+    registered key, else the serial corroborating a regenerated `di`, else
+    an entry with no identity to defend.
     """
-    host = entry.data.get(CONF_HOST)
     stored_serial = entry.data.get(CONF_SERIAL)
-    current_key = entry.data.get(CONF_DEVICE_KEY) or stored_serial or host
-    if info["device_key"] == current_key:
+    current_key = entry.data.get(CONF_DEVICE_KEY) or stored_serial or entry.data.get(CONF_HOST)
+    probed_key = info["device_key"]
+    # An address is not an identity and corroborates nothing -- the exclusion
+    # _resolve_identity makes with `polled_serial != host`. Both sides of
+    # these comparisons fall back to an address when the board reports no
+    # identity at all, and two of those would otherwise agree by
+    # construction rather than by being the same appliance.
+    if probed_key != host and probed_key == current_key:
         return True
-    if stored_serial is not None and stored_serial != host and info["serial"] == stored_serial:
+    if stored_serial is not None and info["serial"] == stored_serial and info["serial"] != host:
         return True
-    return current_key == host
+    # Nothing to defend: a host-keyed entry is registered against whatever
+    # answers at its address -- what _resolve_identity does with it on every
+    # poll -- so no check here can be meaningful, and demanding one would
+    # strand exactly the boards that exception exists to rescue. It still
+    # takes an answer as identity-less as the entry is.
+    return stored_serial is None or (_host_keyed(entry) and probed_key == host)
 
 
 def _followed_title(entry: config_entries.ConfigEntry, host: str) -> str | UndefinedType:

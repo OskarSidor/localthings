@@ -179,6 +179,30 @@ async def test_a_sighting_at_the_same_address_wakes_a_retrying_entry(
     reload.assert_called_once_with(entry.entry_id)
 
 
+async def test_a_sighting_brings_the_address_in_the_title_with_it(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(hass, **{CONF_MAC: MAC})
+
+    await _dhcp(hass, _sighting("10.0.0.77"))
+
+    assert entry.title == "Air conditioner (10.0.0.77)"
+
+
+async def test_a_sighting_leaves_a_title_the_user_made_their_own(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(hass, **{CONF_MAC: MAC})
+    hass.config_entries.async_update_entry(entry, title="Bedroom AC")
+
+    await _dhcp(hass, _sighting("10.0.0.77"))
+
+    assert entry.title == "Bedroom AC"
+    assert entry.data[CONF_HOST] == "10.0.0.77"
+
+
 async def test_a_sighting_of_an_unknown_mac_changes_nothing(
     hass: HomeAssistant,
     enable_custom_integrations,
@@ -326,6 +350,52 @@ async def test_reconfigure_lets_a_host_keyed_entry_move(
 
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_HOST] == "10.0.0.77"
+
+
+async def test_reconfigure_refuses_an_appliance_with_no_identity_at_all(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    """A board with a placeholder serial and no `di` resolves to the address
+    it was probed at (issues #83/#189). An entry that has a real identity has
+    one to check, so agreeing with an address is not enough -- otherwise any
+    such board would be accepted as any entry, the more so once an entry's
+    stored key is itself an address it no longer lives at."""
+    entry = _entry(hass)
+
+    result = await _reconfigure(
+        hass,
+        entry,
+        "10.0.0.77",
+        _probe_result(device_key="10.0.0.77", ocf_device_id=None, serial="10.0.0.77"),
+    )
+
+    assert result["errors"] == {"base": "wrong_device"}
+    assert entry.data[CONF_HOST] == "10.0.0.5"
+
+
+async def test_a_host_keyed_entry_can_move_more_than_once(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    """Its key keeps naming the address it was created at -- _resolve_identity
+    never re-keys a board reporting no `di` -- so the second move has nothing
+    equal to compare and has to be recognized from the stored serial being an
+    address instead."""
+    entry = _entry(
+        hass,
+        **{CONF_HOST: "10.0.0.77", CONF_DEVICE_KEY: "10.0.0.5", CONF_SERIAL: "10.0.0.5"},
+    )
+
+    result = await _reconfigure(
+        hass, entry, "10.0.0.99", _probe_result(device_key="10.0.0.99", serial="10.0.0.99")
+    )
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == "10.0.0.99"
+    # Still keyed on the address it was registered under: re-keying here
+    # would orphan its rows, which is _resolve_identity's rule, not a gap.
+    assert entry.data[CONF_DEVICE_KEY] == "10.0.0.5"
 
 
 async def test_reconfigure_keeps_a_title_the_user_made_their_own(
