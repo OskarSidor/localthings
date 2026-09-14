@@ -91,6 +91,10 @@ MOCK_SERIAL = "TEST-SERIAL-0000"
 # fails rather than passing by coincidence.
 MOCK_DEVICE_KEY = "7b1f0c9e-2a44-4d6b-9f10-4c8e2b5a0d31"
 MOCK_MODEL = "TEST-MODEL"
+# The WiFi MAC the probe reads off /wirelessinfo/vs/0 (issue #469).
+# Matches the refrigerator fixture's scrubbed address, so an entry built
+# from a probe result and one built from a poll of that fixture agree.
+MOCK_MAC = "aa:bb:cc:00:02:01"
 MOCK_DEVICE_TYPE = "refrigerator"
 MOCK_CA_CERT_PEM = "-----BEGIN CERTIFICATE-----\nTEST-CA\n-----END CERTIFICATE-----"
 MOCK_CA_KEY_PEM = "-----BEGIN PRIVATE KEY-----\nTEST-CA-KEY\n-----END PRIVATE KEY-----"
@@ -179,6 +183,7 @@ def _probe_result(*, recognized: bool) -> dict:
         "device_type_recognized": recognized,
         "leaf_cert_pem": MOCK_LEAF_CERT_PEM,
         "leaf_key_pem": MOCK_LEAF_KEY_PEM,
+        "mac": MOCK_MAC,
     }
 
 

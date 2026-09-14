@@ -1712,7 +1712,17 @@
           "host": "Local IP address of your Samsung appliance (e.g. 192.168.1.50)."
         }
       },
-      "confirm_unknown_type": {
+      "reconfigure": {
+      "title": "Change appliance address",
+      "description": "Enter the appliance's current IP address. Everything else about this device stays as it is \u2014 its entities, history and automations are kept.",
+      "data": {
+        "host": "IP address"
+      },
+      "data_description": {
+        "host": "Local IP address of your Samsung appliance (e.g. 192.168.1.50)."
+      }
+    },
+    "confirm_unknown_type": {
         "title": "Appliance type not recognized",
         "description": "This appliance reported model \"{model}\", which isn't a type LocalThings recognizes yet. It'll still be added, but only with common capabilities (power, alarms, etc. where present) rather than the full set for its family. You can help add full support afterward by downloading diagnostics for this device (Settings > Devices & Services > this device > the menu > Download diagnostics) and filing them in a new issue. Submit to add it anyway."
       }
@@ -1728,10 +1738,14 @@
       "unexpected_response": "Connected to the device successfully, but it didn't return a usable device description. It may not be an appliance this integration supports. The Home Assistant log records what it sent.",
       "cannot_connect": "Cannot connect to the device. Verify the IP address is reachable and the CA credentials are correct.",
       "invalid_ca": "The CA certificate or private key could not be loaded. Verify the PEM contents are correct and the key matches the certificate.",
-      "unknown": "Unexpected error. Check the Home Assistant logs for details."
+      "unknown": "Unexpected error. Check the Home Assistant logs for details.",
+      "wrong_device": "A Samsung appliance answered at that address, but it isn't this one \u2014 it reported a different identity. Check the address belongs to this appliance. To add the other one, use Add device instead."
     },
     "abort": {
-      "already_configured": "Device is already configured"
+      "already_configured": "Device is already configured",
+      "already_in_progress": "Configuration flow is already in progress",
+      "reconfigure_successful": "Address updated",
+      "no_entry_for_mac": "No configured appliance stores that MAC address"
     }
   },
   "options": {

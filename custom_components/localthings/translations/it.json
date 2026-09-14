@@ -1712,6 +1712,16 @@
           "host": "Indirizzo IP locale del tuo dispositivo Samsung (ad esempio 192.168.1.50)."
         }
       },
+      "reconfigure": {
+        "title": "Modifica l'indirizzo dell'elettrodomestico",
+        "description": "Inserisci l'indirizzo IP attuale dell'elettrodomestico. Tutto il resto resta invariato: entità, cronologia e automazioni vengono mantenute.",
+        "data": {
+          "host": "Indirizzo IP"
+        },
+        "data_description": {
+          "host": "Indirizzo IP locale del tuo dispositivo Samsung (ad esempio 192.168.1.50)."
+        }
+      },
       "confirm_unknown_type": {
         "title": "Tipo di elettrodomestico non riconosciuto",
         "description": "Questo apparecchio dichiara il modello \"{model}\", un tipo che LocalThings non riconosce ancora. Verrà comunque aggiunto, ma solo con le funzionalità di base (alimentazione, allarmi, ... se presenti) anziché con tutte le funzionalità della sua famiglia. Puoi contribuire all'aggiunta del supporto completo in seguito scaricando i dati diagnostici per questo dispositivo (Impostazioni > Dispositivi e servizi > questo dispositivo > il menu > Scarica diagnostica) e inviandoli in una nuova segnalazione. Invia comunque la segnalazione per aggiungerlo."
@@ -1728,10 +1738,14 @@
       "unexpected_response": "Connessione al dispositivo riuscita, ma non ha restituito una descrizione del dispositivo utilizzabile. Potrebbe non essere un apparecchio supportato da questa integrazione. Il log di Home Assistant riporta ciò che ha inviato.",
       "cannot_connect": "Impossibile connettersi al dispositivo. Verificare che l'indirizzo IP sia raggiungibile e che le credenziali CA siano corrette.",
       "invalid_ca": "Impossibile caricare il certificato CA o la chiave privata. Verificare che il contenuto del file PEM sia corretto e che la chiave corrisponda al certificato.",
-      "unknown": "Errore imprevisto. Controlla i registri di Home Assistant per i dettagli."
+      "unknown": "Errore imprevisto. Controlla i registri di Home Assistant per i dettagli.",
+      "wrong_device": "A quell'indirizzo ha risposto un elettrodomestico Samsung, ma non è questo: ha dichiarato un'identità diversa. Verifica che l'indirizzo appartenga a questo dispositivo. Per aggiungere l'altro, usa Aggiungi dispositivo."
     },
     "abort": {
-      "already_configured": "Il dispositivo è già configurato"
+      "already_configured": "Il dispositivo è già configurato",
+      "already_in_progress": "La configurazione è già in corso",
+      "reconfigure_successful": "Indirizzo aggiornato",
+      "no_entry_for_mac": "Nessun dispositivo configurato conserva quell'indirizzo MAC"
     }
   },
   "options": {

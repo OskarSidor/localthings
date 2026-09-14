@@ -1712,6 +1712,16 @@
           "host": "Lokale IP-Adresse Ihres Samsung-Geräts (z. B. 192.168.1.50)."
         }
       },
+      "reconfigure": {
+        "title": "Geräteadresse ändern",
+        "description": "Geben Sie die aktuelle IP-Adresse des Geräts ein. Alles andere bleibt unverändert — Entitäten, Verlauf und Automationen bleiben erhalten.",
+        "data": {
+          "host": "IP-Adresse"
+        },
+        "data_description": {
+          "host": "Lokale IP-Adresse Ihres Samsung-Geräts (z. B. 192.168.1.50)."
+        }
+      },
       "confirm_unknown_type": {
         "title": "Gerätetyp nicht erkannt",
         "description": "Dieses Gerät hat das Modell \"{model}\" gemeldet, das LocalThings noch nicht als bekannten Typ erkennt. Es wird trotzdem hinzugefügt, jedoch nur mit allgemeinen Funktionen (z. B. Ein/Aus, Alarme, sofern vorhanden) und nicht mit dem vollständigen Funktionsumfang seiner Gerätefamilie. Sie können später helfen, die vollständige Unterstützung hinzuzufügen, indem Sie die Diagnosedaten für dieses Gerät herunterladen (Einstellungen > Geräte & Dienste > dieses Gerät > das Menü > Diagnose herunterladen) und sie in einem neuen Issue einreichen. Bestätigen Sie, um es trotzdem hinzuzufügen."
@@ -1728,10 +1738,14 @@
       "unexpected_response": "Die Verbindung zum Gerät war erfolgreich, es hat jedoch keine verwendbare Gerätebeschreibung zurückgegeben. Möglicherweise wird dieses Gerät von der Integration nicht unterstützt. Weitere Informationen in den Logs.",
       "cannot_connect": "Verbindung zum Gerät nicht möglich. Prüfen Sie, ob die IP-Adresse erreichbar und die CA-Zugangsdaten korrekt sind.",
       "invalid_ca": "Das CA-Zertifikat oder der Privatschlüssel konnte nicht geladen werden. Prüfen Sie, ob der PEM-Inhalt korrekt ist und der Schlüssel zum Zertifikat passt.",
-      "unknown": "Unerwarteter Fehler. Weitere Informationen in den Logs."
+      "unknown": "Unerwarteter Fehler. Weitere Informationen in den Logs.",
+      "wrong_device": "Unter dieser Adresse hat ein Samsung-Gerät geantwortet, aber nicht dieses — es hat eine andere Identität gemeldet. Prüfen Sie, ob die Adresse zu diesem Gerät gehört. Um das andere hinzuzufügen, verwenden Sie „Gerät hinzufügen“."
     },
     "abort": {
-      "already_configured": "Gerät ist bereits konfiguriert"
+      "already_configured": "Gerät ist bereits konfiguriert",
+      "already_in_progress": "Die Konfiguration läuft bereits",
+      "reconfigure_successful": "Adresse aktualisiert",
+      "no_entry_for_mac": "Kein konfiguriertes Gerät speichert diese MAC-Adresse"
     }
   },
   "options": {

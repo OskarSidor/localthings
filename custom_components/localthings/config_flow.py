@@ -21,6 +21,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -33,6 +34,8 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
+from homeassistant.helpers.typing import UNDEFINED, UndefinedType
 
 from . import cloudcourse
 from .const import (
@@ -49,6 +52,7 @@ from .const import (
     CONF_LEAF_CERT_PEM,
     CONF_LEAF_KEY_PEM,
     CONF_LEARN_MODES,
+    CONF_MAC,
     CONF_MANUFACTURER,
     CONF_MODEL,
     CONF_OCF_DEVICE_ID,
@@ -668,6 +672,7 @@ def _read_device(sess, host: str, port: int) -> dict:
         proven_ocf_device_id,
         read_identity,
         resolve_device_key,
+        resolve_mac,
         resolve_model,
         resolve_serial,
     )
@@ -705,6 +710,9 @@ def _read_device(sess, host: str, port: int) -> dict:
         # when the device reported no usable one.
         "ocf_device_id": proven_ocf_device_id(identity),
         "serial": resolve_serial(raw_serial, host),
+        # None for a board that doesn't report /wirelessinfo/vs/0 -- see
+        # resolve_mac, and CONF_MAC for what the stored value is for.
+        "mac": resolve_mac(resources),
         "model": resolve_model(info.get("x.com.samsung.da.modelNum", ""), identity),
         "manufacturer": identity.manufacturer or "Samsung",
         "device_type_name": registry.name if registry is not None else None,
@@ -860,6 +868,7 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if info["ocf_device_id"] is not None
                     else {}
                 ),
+                **({CONF_MAC: info["mac"]} if info["mac"] is not None else {}),
                 CONF_SERIAL: info["serial"],
                 CONF_MODEL: info["model"],
                 CONF_MANUFACTURER: info["manufacturer"],
@@ -980,6 +989,144 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # this step asks for can quote it without digging through logs.
             description_placeholders={"model": info.get("model") or "unknown"},
         )
+
+    async def async_step_dhcp(self, discovery_info: DhcpServiceInfo) -> ConfigFlowResult:
+        """Follow a configured appliance whose DHCP lease moved (issue #469).
+
+        Home Assistant only sends these for a MAC already in the device
+        registry under this domain -- the manifest's `registered_devices`
+        matcher -- so there is never a new appliance to set up here. The MAC
+        is the only field of a sighting that identifies a unit: an address
+        is what we're being told has changed, and three of #469's air
+        conditioners answer to one hostname.
+        """
+        mac = format_mac(discovery_info.macaddress)
+        entry = next(
+            (
+                other
+                for other in self.hass.config_entries.async_entries(DOMAIN)
+                if (stored := other.data.get(CONF_MAC)) and format_mac(stored) == mac
+            ),
+            None,
+        )
+        if entry is None or entry.unique_id is None:
+            # The registry carries this MAC or HA would not have matched it,
+            # so the entry behind it predates CONF_MAC being stored. It picks
+            # the address up on its next successful poll instead.
+            _LOGGER.debug("DHCP sighting of %s matches no entry that stores a MAC", mac)
+            return self.async_abort(reason="no_entry_for_mac")
+
+        await self.async_set_unique_id(entry.unique_id)
+        # Writes the new host and schedules a reload when the address moved.
+        # When it hasn't, the sighting still reloads an entry sitting in
+        # SETUP_RETRY -- Home Assistant's own handling for a discovery
+        # source, and the "this appliance is back on the network" signal a
+        # poll of an unreachable device can't produce (issue #295).
+        self._abort_if_unique_id_configured(updates={CONF_HOST: discovery_info.ip})
+        return self.async_abort(reason="already_configured")
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Move an entry to a new address by hand.
+
+        Without this the only way to correct an address is deleting the
+        entry and adding it back, which takes its entity_ids, history and
+        automations with it (issue #469). It is also how an entry too old to
+        have a stored MAC gets one, after which a moved lease is followed
+        automatically.
+
+        Nothing else is editable here: the CA credentials are install-wide
+        (see async_step_user) and every other stored field is the device's
+        own answer, refreshed by the probe below.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip()
+            leaf_cert = entry.data.get(CONF_LEAF_CERT_PEM)
+            leaf_key = entry.data.get(CONF_LEAF_KEY_PEM)
+            try:
+                info = await self.hass.async_add_executor_job(
+                    _probe_and_validate,
+                    host,
+                    entry.data[CONF_CA_CERT_PEM],
+                    entry.data[CONF_CA_KEY_PEM],
+                    (leaf_cert, leaf_key) if leaf_cert and leaf_key else None,
+                )
+            except (CannotConnect, InvalidCA) as exc:
+                _LOGGER.warning("Probe of %s failed [%s]: %s", host, exc.error_key, exc)
+                errors["base"] = exc.error_key
+            except Exception:
+                _LOGGER.exception("Unexpected error during device probe")
+                errors["base"] = "unknown"
+            else:
+                if not _identity_matches(entry, info):
+                    _LOGGER.warning(
+                        "%s answered as %r, but this entry is registered as %r",
+                        host,
+                        info["device_key"],
+                        entry.data.get(CONF_DEVICE_KEY) or entry.data.get(CONF_SERIAL),
+                    )
+                    errors["base"] = "wrong_device"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        title=_followed_title(entry, host),
+                        data_updates={
+                            CONF_HOST: host,
+                            # The port is probed, not typed, and a device that
+                            # moved may well answer on a different one.
+                            CONF_PORT: info["port"],
+                            CONF_LEAF_CERT_PEM: info["leaf_cert_pem"],
+                            CONF_LEAF_KEY_PEM: info["leaf_key_pem"],
+                            **({CONF_MAC: info["mac"]} if info["mac"] is not None else {}),
+                        },
+                    )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema({vol.Required(CONF_HOST): _TEXT}),
+                user_input or {CONF_HOST: entry.data.get(CONF_HOST)},
+            ),
+            errors=errors,
+        )
+
+
+def _identity_matches(entry: config_entries.ConfigEntry, info: dict) -> bool:
+    """Whether the appliance that just answered is the one this entry is for.
+
+    The same question `coordinator._resolve_identity` answers on a poll,
+    asked before the host is written rather than after: an address typed
+    with one digit wrong would otherwise hand this entry's registry rows --
+    its entity_ids, history and automations -- to whatever appliance lives
+    there. Structured to match that function so the two can't drift: the
+    registered key, else the serial corroborating a regenerated `di`, else a
+    host-keyed entry (issues #83/#189) which has no identity to defend.
+    """
+    host = entry.data.get(CONF_HOST)
+    stored_serial = entry.data.get(CONF_SERIAL)
+    current_key = entry.data.get(CONF_DEVICE_KEY) or stored_serial or host
+    if info["device_key"] == current_key:
+        return True
+    if stored_serial is not None and stored_serial != host and info["serial"] == stored_serial:
+        return True
+    return current_key == host
+
+
+def _followed_title(entry: config_entries.ConfigEntry, host: str) -> str | UndefinedType:
+    """The entry title with the address it names brought up to date.
+
+    Titles are minted as "<device> (<host>)" but are also where a rename
+    lands, so only a title still ending in the old address is rewritten --
+    anything else the user has made their own and keeps.
+    """
+    suffix = f" ({entry.data.get(CONF_HOST)})"
+    if not entry.title.endswith(suffix):
+        return UNDEFINED
+    return f"{entry.title[: -len(suffix)]} ({host})"
 
 
 class LocalThingsOptionsFlow(config_entries.OptionsFlow):

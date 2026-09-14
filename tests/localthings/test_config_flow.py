@@ -917,8 +917,14 @@ async def test_unusable_device0_is_reported_separately(
 
 def test_every_error_key_the_flow_can_raise_has_a_message() -> None:
     """A key with no catalog entry renders as the bare key in the UI, so the
-    taxonomy and the strings have to stay in step."""
+    taxonomy and the strings have to stay in step.
+
+    Two sources, because not every error is a failed probe: the exception
+    taxonomy, and the keys a step assigns directly (issue #469's
+    wrong_device, which is a judgement about who answered rather than a
+    connection that failed)."""
     import json
+    import re
     from pathlib import Path
 
     from custom_components.localthings import config_flow
@@ -930,6 +936,8 @@ def test_every_error_key_the_flow_can_raise_has_a_message() -> None:
         and issubclass(cls, (config_flow.CannotConnect, config_flow.InvalidCA))
     }
     keys.add("unknown")
+    source = Path(config_flow.__file__).read_text()
+    keys |= set(re.findall(r'errors\["base"\] = "(\w+)"', source))
 
     catalog = json.loads(
         (

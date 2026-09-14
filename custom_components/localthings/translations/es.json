@@ -25,6 +25,16 @@
           "host": "Dirección IP local de tu electrodoméstico Samsung (p. ej. 192.168.1.50)."
         }
       },
+      "reconfigure": {
+        "title": "Cambiar la dirección del electrodoméstico",
+        "description": "Introduce la dirección IP actual del electrodoméstico. Todo lo demás se mantiene igual: sus entidades, su historial y sus automatizaciones se conservan.",
+        "data": {
+          "host": "Dirección IP"
+        },
+        "data_description": {
+          "host": "Dirección IP local de tu electrodoméstico Samsung (p. ej. 192.168.1.50)."
+        }
+      },
       "confirm_unknown_type": {
         "title": "Tipo de electrodoméstico no reconocido",
         "description": "Este electrodoméstico informa del modelo «{model}», un tipo que LocalThings aún no reconoce. Se añadirá igualmente, pero solo con las capacidades comunes (alimentación, alarmas, etc. donde existan) en lugar del conjunto completo de su familia. Puedes ayudar a añadir soporte completo después descargando los diagnósticos de este dispositivo (Ajustes > Dispositivos y servicios > este dispositivo > el menú > Descargar diagnósticos) y reportándolos en una nueva incidencia. Envía para añadirlo de todos modos."
@@ -41,10 +51,14 @@
       "unexpected_response": "La conexión con el dispositivo se estableció correctamente, pero no devolvió una descripción de dispositivo utilizable. Puede que no sea un electrodoméstico compatible con esta integración. El registro de Home Assistant recoge lo que envió.",
       "cannot_connect": "No se puede conectar con el dispositivo. Comprueba que la dirección IP sea accesible y que las credenciales CA sean correctas.",
       "invalid_ca": "No se ha podido cargar el certificado CA o la clave privada. Comprueba que el contenido PEM sea correcto y que la clave coincida con el certificado.",
-      "unknown": "Error inesperado. Consulta los registros de Home Assistant para más detalles."
+      "unknown": "Error inesperado. Consulta los registros de Home Assistant para más detalles.",
+      "wrong_device": "Un electrodoméstico Samsung respondió en esa dirección, pero no es este: informó de una identidad distinta. Comprueba que la dirección corresponde a este electrodoméstico. Para añadir el otro, usa Añadir dispositivo."
     },
     "abort": {
-      "already_configured": "El dispositivo ya está configurado"
+      "already_configured": "El dispositivo ya está configurado",
+      "already_in_progress": "La configuración ya está en curso",
+      "reconfigure_successful": "Dirección actualizada",
+      "no_entry_for_mac": "Ningún electrodoméstico configurado guarda esa dirección MAC"
     }
   },
   "options": {

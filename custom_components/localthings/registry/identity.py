@@ -232,3 +232,32 @@ def read_identity(sess, serial: str | None) -> DeviceIdentity:
         # will turn out to identify a device type.
         raw={"/oic/p": p, "/oic/d": d, "/oic/res": res},
     )
+
+
+WIRELESS_INFO_HREF = "/wirelessinfo/vs/0"
+
+
+def resolve_mac(resources: dict[str, dict]) -> str | None:
+    """The appliance's own WiFi MAC, in Home Assistant's connection form.
+
+    /wirelessinfo/vs/0 is otherwise ignored as an entity source
+    (registry/capabilities/ignored.py), but its macaddressWiFi is the only
+    field of an appliance's own state that a DHCP sighting can be matched
+    against: Home Assistant hands discovery an (ip, hostname, mac) triple,
+    and neither of the other two identifies a unit -- three of issue #469's
+    air conditioners share one hostname.
+
+    Roughly half the dumps in tests/fixtures carry the resource at all, so
+    None is an ordinary answer here, not a fault.
+    """
+    raw = (resources.get(WIRELESS_INFO_HREF) or {}).get("macaddressWiFi")
+    if not isinstance(raw, str):
+        return None
+    digits = raw.strip().lower().replace(":", "").replace("-", "").replace(".", "")
+    if len(digits) != 12 or set(digits) - set("0123456789abcdef"):
+        return None
+    # An unflashed radio reports all zeros; every unit of such a family would
+    # otherwise bind to one another's address -- the #189 failure mode again.
+    if set(digits) == {"0"}:
+        return None
+    return ":".join(digits[i : i + 2] for i in range(0, 12, 2))

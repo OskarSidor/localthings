@@ -278,6 +278,14 @@ If Home Assistant restarts while an appliance is unplugged or switched off at th
 
 This only applies to an appliance the integration has reached at least once. A brand-new device that has never answered has nothing to restore from, so setting it up still requires it to be reachable.
 
+### When an appliance's IP address changes
+
+A config entry stores the address it was set up with, so a new DHCP lease would otherwise leave the entry pointing at nothing. Two things keep that from being a manual chore.
+
+Appliances that report their own Wi-Fi MAC (roughly half of them do, on the `/wirelessinfo/vs/0` resource) have it recorded on the config entry, and it is published to Home Assistant's device registry. HA's own DHCP discovery — which watches DHCP traffic, your router integration's device trackers, and an hourly ARP/reverse-DNS sweep of the subnet it already performs — then hands the integration any sighting of that MAC, and the entry follows the address by itself. Nothing is scanned or probed on your behalf: the appliance is identified by its hardware address, not by guessing which host answers. The same sighting also wakes an entry that is retrying setup, so an appliance that was switched off comes back sooner than its next retry.
+
+For everything else — a board that reports no MAC, an entry set up before this existed and already broken by a moved lease, or an appliance you deliberately moved — use **Reconfigure** on the entry (Settings > Devices & Services > LocalThings > the entry's menu). It asks only for the new address, checks that the appliance answering there is the one the entry belongs to before writing anything, and keeps the device's entities, history and automations. Deleting and re-adding the device loses all three; reconfiguring doesn't.
+
 ### Multi-subdevice ("2-in-1") air conditioner systems
 
 Some Samsung installs run more than one indoor subdevice off a single outdoor unit, all reachable over the *one* IP/DTLS session your config entry connects to (a floor-standing + wall-mounted 2-in-1 is a common shape). The integration discovers any sibling subdevices automatically, once, right after the first successful poll — there's nothing to configure. Each discovered subdevice gets its own HA device (linked to the main one via "via device") and its own `climate` card, so it lands in its own room in the dashboard instead of being invisible or mixed into the master's state.

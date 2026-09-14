@@ -18,7 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from smartthings_local.ocf.state_cache import StateCache
@@ -38,6 +38,7 @@ from .const import (
     CONF_LEAF_KEY_PEM,
     CONF_LEARN_MODES,
     CONF_LEARNED_MODES,
+    CONF_MAC,
     CONF_MANUFACTURER,
     CONF_MODEL,
     CONF_OCF_DEVICE_ID,
@@ -73,6 +74,7 @@ from .registry.identity import (
     ocf_device_key,
     proven_ocf_device_id,
     read_identity,
+    resolve_mac,
     resolve_model,
     resolve_serial,
 )
@@ -119,6 +121,17 @@ class _NoOpDescriptor:
 
 
 _RECOVERY_RETRY_S = 600.0  # re-attempt observe mode this often while polling
+
+
+def _mac_connections(mac: str | None) -> set[tuple[str, str]]:
+    """The device-registry connection a stored MAC contributes, if any.
+
+    Publishing it is what makes the manifest's `registered_devices` DHCP
+    matcher work: Home Assistant resolves a sighting's MAC against the
+    device registry and hands the flow to whichever integration owns it
+    (issue #469).
+    """
+    return {(CONNECTION_NETWORK_MAC, mac)} if mac else set()
 
 
 def _local_source_port(host: str) -> int:
@@ -344,6 +357,7 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, self.device_key)},
+            connections=_mac_connections(entry.data.get(CONF_MAC)),
             name=device_display_name(
                 entry.data.get(CONF_DEVICE_TYPE), entry.data.get(CONF_MODEL) or ""
             ),
@@ -1290,6 +1304,7 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         manufacturer: str,
         device_type_name: str | None,
         ocf_device_id: str | None = None,
+        mac: str | None = None,
     ) -> None:
         """Write this device's resolved identity back onto the config entry.
 
@@ -1314,11 +1329,16 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         `di` means is the credential profiles' decision (issue #435); this
         only has to have recorded the value by the time they land.
 
+        `mac` is treated the same way, and for the same reason: half the
+        boards in tests/fixtures report no MAC at all, so one poll that
+        reads none must not discard what another one did (issue #469).
+
         Runs on the event loop, which async_update_entry requires.
         """
         identity = {
             **({CONF_DEVICE_KEY: device_key} if device_key is not None else {}),
             **({CONF_OCF_DEVICE_ID: ocf_device_id} if ocf_device_id is not None else {}),
+            **({CONF_MAC: mac} if mac is not None else {}),
             CONF_SERIAL: serial,
             CONF_MODEL: model,
             CONF_MANUFACTURER: manufacturer,
@@ -1571,12 +1591,23 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device_key = key
 
         ident = self._identity
+        # Only a poll this entry adopted contributes a MAC, the gate `proven`
+        # gets below and for the same reason: following the lease of an
+        # appliance `_resolve_identity` refused to re-key onto would be
+        # following the wrong device. A snapshot replay is this entry's own
+        # last reading, so it does contribute -- which is how an entry
+        # already broken by a moved lease learns its MAC while the appliance
+        # is unreachable (issue #295).
+        adopted = from_snapshot or (ocf_device_key(ident) or polled_serial) == key
+        mac = resolve_mac(resources) if adopted else None
+
         model = resolve_model(model_num, ident)
         name = device_display_name(device_type_name, model)
         mfr = (ident.manufacturer if ident else "") or "Samsung"
 
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, key)},
+            connections=_mac_connections(mac or self._entry.data.get(CONF_MAC)),
             name=name,
             manufacturer=mfr,
             model=model,
@@ -1604,6 +1635,7 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mfr,
             device_type_name,
             proven if proven == key else None,
+            mac,
         )
         if not from_snapshot:
             # A coverage gap is a claim about what the device reports, so only
