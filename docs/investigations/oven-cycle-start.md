@@ -1,0 +1,528 @@
+# Starting an oven or microwave cycle: still open, and how to attack it next
+
+Nothing in this integration starts a cook. `oven.py`'s docstring has said
+"local-OCF cycle start isn't reproducible on this firmware" since the
+NV7000BS work, and three boards have since been measured saying the same
+thing in three different ways. This file collects those results, states
+what the boards themselves tell us about whether a remote start is even in
+the contract, and turns `docs/investigations/filter-reset.md`'s method into
+a ladder of `localthings.write_resource` probes somebody with hardware can
+actually run.
+
+Issues: #176 (the feature request), #183 (TP1X range), #300 (TP2X wall
+oven), #473 (NE63A6111SS, "can't start preheating"), #470 (same board
+family).
+
+## What is measured
+
+| Board | Model | Tried | Result |
+|---|---|---|---|
+| `TP1X_DA-KS-RANGE-0101X` | NE9801T-/AA0 (#183) | `{state: "Run", operationTime: "00:30:00"}` on `/operational/state/vs/0` | `2.04`, rep unchanged: `state` still `Ready`, times still `00:00:00` |
+| same | | `{state: "Preheat", operationTime, remainingTime}` | `2.04`, nothing starts -- **but the oven chimed** |
+| same | | `{desired: "350"}` on `/temperatures/vs/0` -- the bare field, not the `items` RMW | `2.04`, `desired` still `0` |
+| `TP2X_DA-KS-WALLOVEN-000002` | NW9000KD/AA1 (#300) | five sequences: mode / setpoint / `Run` separately, in both orders, and `state`+times in one POST | every write `2.04`, `changed: false`, `held: false` after 20 s |
+| same | | `/oven/vs/0` | `4.05` -- the resource is `oic.if.s` |
+| same | | `Sound_Off` / `Sound_On` on `/mode/vs/0` | `2.04`, **held**, panel followed |
+| `TP2X_DA-KS-RANGE-0101X` | NX9302T-/AA0, gas (#176/#183) | Bake, then 350, then `Run`, from `Ready` | all `2.04`, none held, `/oven/vs/0` stayed `Ready`, panel silent |
+| same | | the *same* setpoint and cook-time writes 3 minutes into a panel-started Bake | `2.04`, **held**, panel followed within seconds |
+
+Three constraints fall out of that, and every hypothesis has to fit all
+three:
+
+1. **Non-cook settings write fine from `Ready`.** `Sound`, `EnergySaving`
+   and friends stick on the same resource, over the same session, in the
+   same state where the cook fields do not.
+2. **Cook settings write fine mid-cook.** Setpoint and cook time both hold
+   and the panel follows -- that is the whole of what the shipped entities
+   do today, and it is real remote control.
+3. **Cook settings from `Ready` are accepted and then discarded.** `2.04`,
+   then the old value is back.
+
+So this is not a transport problem, not a remote-control-flag problem, and
+not an ACL (a denial would be `4.03`, not an accepted-then-reverted write).
+It is a **per-field gate conditioned on a job already existing**.
+
+## The board tells you whether a remote start is in the contract at all
+
+`/mode/vs/0`'s `x.com.samsung.da.modeSpec` carries a per-mode `control`
+field with exactly three values in the corpus: `Start&Setting`, `Setting`,
+`NotSupported`. Read as "remote may start this mode" / "remote may only
+adjust it while it runs" / "neither", it predicts both boards where a start
+was measured to be impossible:
+
+| Fixture | DeviceType | `Start&Setting` modes | `SettingPossible_` |
+|---|---|---|---|
+| `range_ne6516a` | NE6516A-/AA0 | Bake, ConvectionBake, ConvectionRoast, AirFryer, Dehydrate | `_0` |
+| `range_ne8300d` | NE8300D-/AA0 | ConvectionBake, ConvectionRoast, Bake, AirFryer, Dehydrate | `_0` |
+| `range_no_info` | NE8411B-/AC0 | Bake, ConvectionBake, ConvectionRoast, AirFryer, Dehydrate | `_0` |
+| `range_tp1x_da_ks_range_0101x` | NE9801T-/AA0 (#183) | nine, incl. the Upper/Lower flex modes | `_7` |
+| `range_device` | NI9100D-/AA0 | Bake only | `_5` |
+| `range_nx60t8311ss` | NX9302T-/AA0, **gas** (#176) | **none** -- all seven are `Setting` | `_2` |
+| `oven_tp2x_ks_walloven` | NW9000KD/AA1 (#300) | **no `modeSpec` at all** | -- |
+| `oven_device` | NV7000BS/ET5 | no `modeSpec` | -- |
+| `microwave_mw7300b` | MW7300B-/EU1 | Convection, AirFryer, Grill, Deodorization | -- |
+| `qooker_mw7500a` | MW7500A-/KO0 | **none** -- all nine are `Setting` | -- |
+| `microwave_me7500d` | ME7500D-/AA1 | no `modeSpec` | -- |
+
+The gas range declares no startable mode, its manual says "For safety you
+cannot turn the gas oven ON remotely", and the measurement agrees. The wall
+oven declares no `modeSpec` at all and nothing works on it either. That is
+two independent confirmations, so:
+
+- **Do not spend a reporter's hardware time on a board with no
+  `Start&Setting` mode.** Read `modeSpec` first (probe 0) and say so in the
+  issue instead.
+- **It is necessary, not sufficient.** The NE9801T declares nine startable
+  modes and still ignores every local start attempted so far. `control`
+  describes Samsung's *command* contract, which the cloud reaches and we so
+  far do not.
+- **On a microwave it will never be the magnetron.** Every `MicroWave*`
+  mode in the corpus is `Setting`-only; the startable ones are the
+  convection/grill/air-fry/deodorize modes. Any future control must follow
+  the device's own declaration rather than offering a start for every mode.
+
+`SettingPossible_<n>` is the other unexplained token on these boards (`0`,
+`2`, `5`, `7` across six units, `_0` on three different NE-series ranges).
+It does not track the number of startable modes. Whether it is a static
+capability bitmask or a live gate is answerable cheaply -- see probe 6 --
+and if it is live it is the best candidate for the thing that makes a cook
+write stick.
+
+## What `filter-reset.md` transfers to this problem
+
+1. **`2.04` is not evidence of anything.** This firmware ACKs field names it
+   does not recognise. Every negative result in the table above is a
+   `2.04`, which means all of them are equally consistent with "the cook
+   fields never reach a handler from `Ready`". Stop varying values; first
+   establish whether a handler is reached at all.
+2. **The near-miss field name is the decisive control.** `filterResetZZZ`
+   was swallowed with `2.04` while `filterReset: "zzz"` faulted `5.00`, and
+   that asymmetry is the entire reason we know the field exists. The same
+   pair on `state` / `modes` / `desired` is probe 1, and nobody has run it
+   on an oven.
+3. **A `5.00` is closer to a hit than a `2.04`.** It means you reached real
+   code and missed the vocabulary, which collapses the search to a handful
+   of command words.
+4. **Wrong type looks like rejection and isn't.** A non-string fails
+   `oc_rep_get_string()` before the dispatch runs, so it returns an inert
+   `2.04`. Send the type the rep already uses -- `modes` is an *array* of
+   strings, `state` and `desired` are bare strings.
+5. **The trigger can be a field no rep ever reports.** `filterReset` appears
+   in no representation, no `/oic/res`, no `/device/0` batch. The three
+   dumps in #300 (before / after / 10 s into an app-started cook) therefore
+   *could not* have found a trigger of that shape, and did not. A diff is
+   evidence about state, never about commands.
+6. **Boards lag their own commands.** The fridge reflected a reset in ~2 s,
+   the AC in #449 took about a minute. Use `verify_after: 20` or more, and
+   never call a candidate dead on one immediate readback.
+7. **One CoAP/DTLS session per device.** `hold_session_lock` defaults to on
+   and should stay on for these; nothing else may land between two steps.
+8. **`changed` is not "something changed".** It is "are my payload's values
+   present in the readback", so writing a field its current value reports
+   `changed: true` having done nothing. Read `held` from `verified`.
+9. **A physical reaction counts as a fault code.** The chime the NE9801T
+   produced for `state: "Preheat"` -- and for nothing else tried -- is this
+   family's `5.00`: the board reacted to a value it did not accept.
+   `Preheat` reached something `Run` did not, on a board whose
+   `/oven/vs/0` reports exactly `Preheat` during a real cook.
+
+## A reframe worth holding while you probe
+
+From #183: with Smart Control **on**, setting mode/temp/time from the app
+starts the cook by itself; with Smart Control **off**, the same settings are
+programmed and somebody presses Start on the panel. If that is how the board
+sees it, **there is no separate start command to find** -- the start is what
+the board does when it accepts a *cook setting* while Smart Control is on,
+and the open question is only why an accepted cook setting is thrown away
+from `Ready` over the local path when the cloud's is not.
+
+That is a different search than "guess the start token", and probes 1-3 are
+aimed at it: they ask whether the cook fields are parsed at all from
+`Ready`, not what value would start a cycle.
+
+Both readings share one suspect: the Wi-Fi module holds a shadow rep and
+forwards recognised commands to the MICOM board that actually owns cook
+state (the channel `ac-filter-reset.md` found as `/rm/micomdata/vs/0` on
+another family). An accepted-then-reverted write is exactly what a shadow
+overwritten by the next MICOM sync looks like -- i.e. the local POST never
+became a MICOM message. Mid-cook writes do become one, which is why they
+hold.
+
+## The probe ladder
+
+Rules for whoever runs these:
+
+- **The oven must be empty and you should be standing in front of it.**
+  These are genuine attempts to make an appliance heat.
+- Run them **one service call at a time**, paste the whole response, and say
+  what the panel did -- including any beep. Per trap 9, a noise is data.
+- Stop at the first rung that answers; each rung below assumes the one above.
+- `verified` is keyed by href and compares only the **last** payload written
+  to that href, so a call containing two writes to the same href reports
+  `held` for the second one only. For the near-miss pairs, read the
+  per-write `code` out of `results[]` and ignore `verified`.
+- Everything below writes canonical hrefs; if your oven has two cavities,
+  pick the cavity's device and keep the hrefs as written.
+
+### Probe 0 -- ask the board before touching it
+
+```yaml
+action: localthings.read_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  href: /mode/vs/0
+```
+
+In the response: `x.com.samsung.da.modeSpec` (does any mode carry
+`"control":"Start&Setting"`, and what are its `tempMinF`/`timeMin`?), the
+`SettingPossible_<n>` token, and `supportedModes`. If no mode is
+`Start&Setting`, stop here and record it in the issue -- on the two boards
+where that was true, nothing else worked either.
+
+### Probe 1 -- the near-miss control on `/operational/state/vs/0`
+
+The single most informative experiment in this file, and the direct
+translation of how the filter reset was found. Neither write can start
+anything.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 20
+  writes:
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Zzzz"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.stateZzzz: "Run"
+```
+
+| First write | Second write | Reading |
+|---|---|---|
+| `5.00` | `2.04` | The handler is reachable from `Ready` and we are only missing the word. Go to probe 4. |
+| `2.04` | `2.04` | `state` is swallowed exactly like an unknown field name: there is no start handler on this href in this state. Go to probe 2, then 5. |
+| `4.00`/`4.03` | anything | Different firmware posture from the fridge's; note the code, it is new information. |
+
+### Probe 2 -- the same control on `/mode/vs/0` and `/temperatures/vs/0`
+
+Run as two separate calls (one href each, so `verified` stays meaningful).
+The third write in each is the type probe from trap 4: a string where the
+rep uses an array tells you whether a `2.04` came from the getter failing
+rather than from the value being rejected.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 20
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Zzzz"]
+      settle: 5
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modesZzzz: ["Bake"]
+      settle: 5
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: "Bake"
+```
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 20
+  writes:
+    - href: /temperatures/vs/0
+      payload:
+        x.com.samsung.da.items:
+          - x.com.samsung.da.id: "0"
+            x.com.samsung.da.desired: "Zzzz"
+      settle: 5
+    - href: /temperatures/vs/0
+      payload:
+        x.com.samsung.da.itemsZzzz:
+          - x.com.samsung.da.id: "0"
+            x.com.samsung.da.desired: "350"
+```
+
+### Probe 3 -- the same control, mid-cook
+
+The control that makes probes 1-2 interpretable. Start a cook **from the
+panel** (any mode, lowest temperature, 20 minutes), wait until it is
+running, then run probe 1 again unchanged.
+
+Mid-cook is the one state where we know cook writes reach the MICOM. So:
+
+- garbage value `5.00` mid-cook but `2.04` from `Ready` -> the handler
+  genuinely only exists while a job exists, and "start" is not a field on
+  this resource. That result closes the direct-write line of attack and
+  points the remaining work at how a job gets created at all.
+- garbage value `5.00` in both states -> the handler is always there and
+  probe 4's vocabulary sweep is worth running properly.
+- `2.04` in both states even though real values held mid-cook -> this
+  firmware never faults on this resource, the near-miss signal is not
+  available here, and only `held` can be believed. Say so and skip to
+  probe 5.
+
+### Probe 4 -- the vocabulary, only once probe 1 or 3 gave a `5.00`
+
+Do not run this speculatively; run it when a fault code is available to
+score the guesses with. One word per write, `5.00` on all of them means
+none is right, a `2.04` in the middle of a run of `5.00`s is the hit
+(the value parsed and dispatched cleanly) -- the exact inversion the fridge
+taught.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Start"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Preheat"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Cooking"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Operate"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Run"
+```
+
+`Preheat` is in the list deliberately: it is the one value that has ever
+produced a physical reaction (#183), and it is what `/oven/vs/0` reports
+during a real cook.
+
+### Probe 5 -- fields the rep never reports
+
+The filter reset was an unadvertised field on an advertised resource. Two
+candidates on `/operational/state/vs/0` have some claim to being real
+rather than invented:
+
+`causeSource.state` is a genuine field on this href -- `range_device`,
+`range_ne8300d` and `microwave_mw7300b` all report `"SETB_Ready"` -- and its
+name says the board tracks *what caused* the current state. It is the only
+field in the corpus that looks like a command-provenance marker.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /operational/state/vs/0
+      payload:
+        causeSource.state: "Zzzz"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Run"
+        causeSource.state: "SETB_Run"
+```
+
+The first write is the near-miss control again: if a garbage value on
+`causeSource.state` faults while a garbage *name* does not, this field is
+parsed and worth a vocabulary of its own.
+
+### Probe 6 -- is `SettingPossible_` a live gate?
+
+Free to answer, and it needs no writes at all. Run
+
+```yaml
+action: localthings.read_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  href: /mode/vs/0
+```
+
+at four moments and record the token each time: Smart Control off, Smart
+Control just switched on, immediately after the app starts a cook, and
+after the cook ends. A token that moves with Smart Control is the gate we
+are looking for; one that never moves is a static capability bitmask and
+can be dropped from the investigation.
+
+If it moves, this is the write worth trying (a single-token options merge,
+the same shape every other setting on this href uses, and non-thermal):
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 20
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.options: ["SettingPossible_1"]
+      settle: 5
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Bake"]
+```
+
+### Probe 7 -- start a job that cannot heat anything
+
+NV7000BS-class boards carry `UpperTimerSet_`, `UpperTimerCurrent_` and
+`UpperTimerState_Ready` in `/mode/vs/0`'s options: a panel kitchen timer,
+which is a *job* with a start, a countdown and an end, and no element
+behind it. If a local write can start that timer, the board does accept a
+job start over the local path and the blocker is specific to cooking; if it
+cannot, the blocker is job creation itself. Either answer is worth more
+than another `2.04` on `state`.
+
+Only on a board whose options actually carry those tokens (check probe 0):
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 20
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.options: ["UpperTimerSet_5"]
+      settle: 5
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.options: ["UpperTimerState_Run"]
+```
+
+`keepWarmReservation_Off` on the #300 wall oven is the same shape of
+experiment for that board: a reservation is a scheduled job, so whether
+`keepWarmReservation_On` *holds* from `Ready` separates "no cook parameter
+sticks" from "nothing job-shaped sticks".
+
+### Probe 8 -- an unenumerated command resource
+
+`read_resource` is a live GET and answers `4.04` for a resource that is not
+there, `4.05` for one that is there and unreadable, `2.05` for one that is.
+That makes it a safe existence scanner -- no writes, no vocabulary
+guessing. One call each:
+
+```yaml
+action: localthings.read_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  href: /actions/vs/0
+```
+
+...and the same for `/rm/micomdata/vs/0`, `/quickcontrol/vs/0`,
+`/reservation/vs/0`, `/cooking/vs/0`, `/oven/cook/vs/0`,
+`/oven/spec/vs/0`.
+
+Anything that answers `2.05` is new surface. **Do not then guess action
+names at it**: `ac-filter-reset.md` deliberately stopped at that line,
+because an unknown vocabulary on a channel called "actions" can hold a
+factory reset next to the thing you want. Report what exists and stop.
+
+### Probe 9 -- everything in one message
+
+Cheap, unlikely, and worth having on record because the AC boards do have
+settings that only stick when written alongside the thing they belong to
+(`Sleep_<n>` needs `Comode_Sleep` in the same options write). Unknown field
+names are swallowed, so the cost of being wrong here is one `2.04`.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Bake"]
+        x.com.samsung.da.operationTime: "00:20:00"
+        x.com.samsung.da.state: "Run"
+```
+
+### Probe 10 -- the actual start, on a board that declares one
+
+Only after probe 0 shows a `Start&Setting` mode. Pick the gentlest one it
+declares -- `Dehydrate` or `BreadProof` where present, not `Broil` -- and
+use that mode's own `tempDefaultF`/`timeDefault` from `modeSpec` rather
+than a number from this file.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Dehydrate"]
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.operationTime: "00:20:00"
+        x.com.samsung.da.remainingTime: "00:20:00"
+      settle: 5
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Run"
+```
+
+This is #300's sequence B with a mode the board says it will start. It is
+last because it is the one already known to fail on three boards; running
+it first is how this investigation spent three threads learning nothing.
+
+## What ships if one of these lands
+
+A start control would follow `common.filter_reset_button`'s shape exactly:
+bound to `/operational/state/vs/0`, **gated on the device's own
+declaration** -- here `modeSpec[selected_mode].control` containing `Start`,
+the way the filter button is gated on `filterResetType` naming a reset the
+device claims to support. A bare presence check would be the same mistake
+`notresetable` was: `Setting` and `NotSupported` both mean no.
+
+The gate has to be per *mode*, not per device, because the same board
+declares `Start&Setting` for Bake and `Setting` for Broil. On microwaves
+that is what keeps a start control off every `MicroWave*` mode.
+
+## Not the answer, and why
+
+- **`state: "Run"` alone, from `Ready`** -- `2.04` and reverted on three
+  boards across two generations. It is what every other family uses, and it
+  is not enough here.
+- **Ordering.** #300 ran settings-then-`Run` and `Run`-then-settings with
+  5 s settles under one session lock. Neither order changed anything.
+- **`state` + times in one POST.** Same result (#300 sequence D).
+- **`/oven/vs/0`.** `4.05` on the wall oven, and declared `oic.if.s` in
+  every fixture that reports an `if`. It is a read-only mirror of cavity
+  state, not a control surface.
+- **Diffing dumps around an app-started cook.** #300 captured before /
+  after / 10 s in, and #183 captured idle vs cook-started. Both show the
+  *effect* (`desired`, `operationTime`, `state`, `/oven/vs/0` -> `Preheat`)
+  and neither can show a trigger that is never stored -- see transfer 5.
+- **The remote-control flag.** #300's reporter enabled Smart Control per
+  cavity and confirmed the sensor read on; writes still reverted. The
+  integration's own block was bypassed too (`write_resource` ignores it).
+- **The DAWIT 3.0 microwave generation (#433).** Every resource is
+  `oic.if.s` and answers `4.05` to a write. There is no local write path to
+  find there; none of the probes above apply.
+
+## One tooling gap worth closing first
+
+`_raw_write_blocking` discards the POST response body (`code, _ =
+sess.post(...)`). On the fridge that body was a verbatim echo and worth
+nothing (`filter-reset.md`, trap 2), but the laundry firmware answers with
+a `"Control fail, <...>"` diagnostic, and **no oven board has ever been
+checked**. If one of these boards names its reason for discarding a cook
+write, it is sitting in a buffer we throw away on every probe above.
+Surfacing it in `write_resource`'s per-write result would cost a few lines
+and could end this investigation outright.
