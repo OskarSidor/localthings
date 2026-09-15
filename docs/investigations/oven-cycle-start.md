@@ -38,9 +38,11 @@ three:
 3. **Cook settings from `Ready` are accepted and then discarded.** `2.04`,
    then the old value is back.
 
-So this is not a transport problem, not a remote-control-flag problem, and
-not an ACL (a denial would be `4.03`, not an accepted-then-reverted write).
-It is a **per-field gate conditioned on a job already existing**.
+So this is not a transport problem and not a remote-control-flag problem.
+It is a **per-field gate conditioned on a job already existing**. It is
+probably not an OCF access-control denial either -- that would be a `4.03`,
+not an accepted-then-reverted write -- but "probably" is doing work there,
+and probe 12 settles it with one read.
 
 ## The board tells you whether a remote start is in the contract at all
 
@@ -147,6 +149,82 @@ another family). An accepted-then-reverted write is exactly what a shadow
 overwritten by the next MICOM sync looks like -- i.e. the local POST never
 became a MICOM message. Mid-cook writes do become one, which is why they
 hold.
+
+## What every other open-source integration does about it
+
+Four projects were surveyed. None of them starts an oven any way we could
+copy, but the survey is not a dead end: it pins down the cloud contract's
+*shape*, and one of them hands over two mechanical facts we did not have.
+
+**Home Assistant core's own `smartthings` integration (cloud).** Its entire
+oven write surface is one button: `ovenOperatingState` -> `stop`. There is
+no start, no mode, no setpoint, no operation time on an oven anywhere in
+`button.py`, `number.py`, `select.py`, `time.py` or `climate.py`. The same
+file *does* ship start / pause / resume for a dishwasher
+(`samsungce.dishwasherOperation`), gated on `remoteControlStatus`. So the
+most mainstream integration there is treats "stop the oven" as supported
+and "start the oven" as not, over the cloud, deliberately.
+
+**HubiThings Replica's `ReplicaSamsungOven` (cloud, Hubitat).** The most
+complete open-source Samsung oven driver in existence, and worth reading in
+full. Three things carry over:
+
+- There are **two capability generations**, and they differ in a way that
+  matters here. Newer boards expose `samsungce.ovenOperatingState` with
+  `start` (no arguments), `stop`, `pause` and `setOperationTime(hh:mm:ss)`.
+  Legacy boards expose `ovenOperatingState`, which has **no
+  `setOperationTime` at all** -- the driver sets a cook time there by
+  calling `start` with a map, `[time: <seconds>]`. On that generation,
+  writing the time *is* the start command.
+- The **ordering is explicit and documented**: "Set Oven Setpoint: requires
+  mode set first"; "Set Operation Time: requires mode and oven setpoint set
+  first". `start(mode, opTime, setpoint)` issues setOvenMode ->
+  setOvenSetpoint -> setOperationTime -> bare `start`, with a **2 second**
+  pause between each.
+- Its readme states plainly: "Samsung has chosen to disable non-SmartThings
+  access to Start, Pause, and Set Operation Time functions for *safety*
+  reasons", and tags `setOperationTime` with "CAUTION: MAY START OVEN ON
+  SOME OVENS". That matches the SmartThings staff line that OCF appliances
+  are driven at plugin level rather than through the public API.
+
+**No microwave driver exists in any of them.** Replica has drivers for the
+oven, oven cavity, washer, dryer, dishwasher and fridge, and none for a
+microwave. Nothing in the open-source world starts a microwave remotely,
+which is the same conclusion the corpus's own `modeSpec` reaches from the
+other direction.
+
+**`smartthings-local` (aceindy), the library this integration is built
+on.** Same local CoAP-DTLS surface, different codebase, same wall: its
+readme calls oven cavity remote-start "the marquee open example ... the
+write is accepted (`2.04`) but the cavity never engages". Two mechanics from
+it that we did not have:
+
+1. **"The bridge deliberately does not fetch-back right after a write; that
+   GET is itself what triggers the revert."** Our write path always GETs the
+   href immediately after the POST -- that is where `after` and `changed`
+   come from -- so **every measurement in #183 and #300, and every probe in
+   this file, has that GET inside it**. If their observation generalises,
+   some of what we have recorded as "accepted then reverted" may be
+   "accepted, then knocked down by our own verification read". It does not
+   generalise to everything (the fridge's filter reset held through exactly
+   this path), but for cook fields it is untested and cheap to test -- see
+   the tooling gaps below.
+2. **`UpperTimer*` on `/mode/vs/0` populates when set through the API**,
+   though a timer set on the panel never appears there. That is a
+   job-shaped write sticking from idle on an oven board, which is the whole
+   premise of probe 7.
+
+What the survey changes about the probes: match the cloud's exact pacing
+and order rather than our own (2 s, mode -> setpoint -> time -> start, per
+Replica), try the **legacy shape** where the time write is the start
+(probe 11), and treat the readback as a variable rather than a constant.
+
+Sources: `homeassistant/components/smartthings/button.py` in home-assistant/core;
+`Drivers/ReplicaSamsungOven.groovy` and `Docs/SamsungOvenReadme.md` in
+DaveGut/HubithingsReplica; the `README.md` of aceindy/smartthings-local;
+the capability list in pySmartThings/pysmartthings. The SmartThings staff
+statement the Replica readme cites is community.smartthings.com thread
+251558.
 
 ## The probe ladder
 
@@ -481,6 +559,59 @@ This is #300's sequence B with a mode the board says it will start. It is
 last because it is the one already known to fail on three boards; running
 it first is how this investigation spent three threads learning nothing.
 
+### Probe 11 -- the legacy shape: the time write *is* the start
+
+From Replica's legacy path, where `ovenOperatingState.start` carries
+`[time: <seconds>]` and no separate time command exists. Locally that is
+`operationTime` written **alone** -- no `remainingTime` alongside it, no
+`state` write at all, which is not a combination anybody has tried. #183
+wrote all three together; #300 wrote `state` with both times. Use the
+cloud's pacing exactly: 2 s between steps, mode then setpoint then time.
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Bake"]
+      settle: 2
+    - href: /temperatures/vs/0
+      payload:
+        x.com.samsung.da.items:
+          - x.com.samsung.da.id: "0"
+            x.com.samsung.da.desired: "350"
+            x.com.samsung.da.unit: "Fahrenheit"
+      settle: 2
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.operationTime: "00:20:00"
+```
+
+### Probe 12 -- rule the OCF access-control layer in or out
+
+Read-only, and it answers a question this investigation has been assuming
+the answer to. The boards advertise `/oic/sec/doxm` and `/oic/sec/pstat` in
+`/oic/res`; the standard sibling `/oic/sec/acl2` holds the ACEs that say
+which subject may do what to which resource. If our minted identity's ACE
+covers these hrefs with full permissions, the whole "the cloud is
+privileged and we are not" branch dies cleanly; if it is restricted to a
+subset, that is the answer and no amount of payload guessing would have
+found it.
+
+```yaml
+action: localthings.read_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  href: /oic/sec/acl2
+```
+
+Also worth reading once each: `/oic/sec/doxm`, `/oic/sec/pstat`,
+`/oic/sec/cred`. Report the codes even when they are `4.03` -- a security
+resource refusing us is itself informative.
+
 ## What ships if one of these lands
 
 A start control would follow `common.filter_reset_button`'s shape exactly:
@@ -516,13 +647,24 @@ that is what keeps a start control off every `MicroWave*` mode.
   `oic.if.s` and answers `4.05` to a write. There is no local write path to
   find there; none of the probes above apply.
 
-## One tooling gap worth closing first
+## Two tooling gaps worth closing first
 
-`_raw_write_blocking` discards the POST response body (`code, _ =
-sess.post(...)`). On the fridge that body was a verbatim echo and worth
+**The POST response body is thrown away.** `_raw_write_blocking` does
+`code, _ = sess.post(...)`. On the fridge that body was a verbatim echo and worth
 nothing (`filter-reset.md`, trap 2), but the laundry firmware answers with
 a `"Control fail, <...>"` diagnostic, and **no oven board has ever been
 checked**. If one of these boards names its reason for discarding a cook
 write, it is sitting in a buffer we throw away on every probe above.
 Surfacing it in `write_resource`'s per-write result would cost a few lines
 and could end this investigation outright.
+
+**The immediate readback is not optional, and it should be.**
+`_raw_write_blocking` POSTs and then GETs the same href to produce `after`,
+so there is currently no way to write to one of these boards *without*
+reading it back a moment later. `smartthings-local` avoids that GET
+deliberately, on the grounds that it is what triggers the revert. Until
+`write_resource` can be told to skip it -- a per-write `readback: false`,
+with `changed` reported as unknown for that write and `verify_after` left
+as the only check -- every probe here measures the write and the readback
+together and cannot separate them. It is the smaller of the two changes and
+the one that could invalidate part of the table at the top of this file.
