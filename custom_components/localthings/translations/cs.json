@@ -1712,6 +1712,16 @@
           "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
         }
       },
+      "reconfigure": {
+        "title": "Změnit adresu spotřebiče",
+        "description": "Zadejte aktuální IP adresu spotřebiče. Vše ostatní u tohoto zařízení zůstane beze změny — jeho entity, historie i automatizace budou zachovány.",
+        "data": {
+          "host": "IP adresa"
+        },
+        "data_description": {
+          "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
+        }
+      },
       "confirm_unknown_type": {
         "title": "Typ spotřebiče nebyl rozpoznán",
         "description": "Tento spotřebič hlásí model „{model}“, což je typ, který LocalThings zatím nerozpoznává. Přesto bude přidán, ale pouze se společnými funkcemi (napájení, alarmy atd., pokud jsou k dispozici), nikoli s plnou sadou funkcí pro danou rodinu spotřebičů. Podporu můžete později pomoci rozšířit stažením diagnostiky pro toto zařízení (Nastavení > Zařízení a služby > toto zařízení > nabídka > Stáhnout diagnostiku) a jejím vložením do nového issue. Odesláním zařízení přidáte i tak."
@@ -1728,10 +1738,14 @@
       "unexpected_response": "Připojení k zařízení proběhlo úspěšně, ale nevrátilo použitelný popis zařízení. Nemusí jít o spotřebič, který tato integrace podporuje. Co zařízení odeslalo, najdete v logu Home Assistanta.",
       "cannot_connect": "Nelze se připojit k zařízení. Ověřte, že je IP adresa dostupná a že jsou přihlašovací údaje CA správné.",
       "invalid_ca": "Certifikát CA nebo privátní klíč se nepodařilo načíst. Ověřte, že obsah PEM je správný a že klíč odpovídá certifikátu.",
-      "unknown": "Neočekávaná chyba. Podrobnosti najdete v protokolech Home Assistant."
+      "unknown": "Neočekávaná chyba. Podrobnosti najdete v protokolech Home Assistant.",
+      "wrong_device": "Na této adrese odpověděl spotřebič Samsung, ale není to tento — ohlásil jinou identitu. Zkontrolujte, že adresa patří tomuto spotřebiči. Chcete-li přidat ten druhý, použijte možnost Přidat zařízení."
     },
     "abort": {
-      "already_configured": "Zařízení je již nakonfigurováno"
+      "already_configured": "Zařízení je již nakonfigurováno",
+      "already_in_progress": "Konfigurace již probíhá",
+      "reconfigure_successful": "Adresa byla aktualizována",
+      "no_entry_for_mac": "Žádný nakonfigurovaný spotřebič neuchovává tuto MAC adresu"
     }
   },
   "options": {

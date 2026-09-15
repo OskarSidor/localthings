@@ -43,6 +43,11 @@ CONF_DEVICE_KEY = "device_key"
 # until a live authenticated read reports a usable `di`, and never used to
 # key devices or entities.
 CONF_OCF_DEVICE_ID = "ocf_device_id"
+# The appliance's own WiFi MAC (registry.identity.resolve_mac), stored so a
+# DHCP sighting can be matched back to this entry and its host followed when
+# the lease moves (issue #469). Absent on boards that don't report
+# /wirelessinfo/vs/0, and on entries whose last poll predates this key.
+CONF_MAC = "mac"
 CONF_MODEL = "model"
 CONF_MANUFACTURER = "manufacturer"
 CONF_DEVICE_TYPE = "device_type"
