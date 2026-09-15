@@ -30,6 +30,7 @@ from .registry.subdevices import MAIN, Subdevice
 ATTR_HREF = "href"
 ATTR_PAYLOAD = "payload"
 ATTR_SETTLE = "settle"
+ATTR_READBACK = "readback"
 ATTR_WRITES = "writes"
 ATTR_VERIFY_AFTER = "verify_after"
 ATTR_HOLD_SESSION_LOCK = "hold_session_lock"
@@ -45,6 +46,7 @@ _WRITE_ITEM_SCHEMA = vol.Schema(
         # a bad payload tripped.
         vol.Required(ATTR_PAYLOAD): object,
         vol.Optional(ATTR_SETTLE): vol.Coerce(float),
+        vol.Optional(ATTR_READBACK): cv.boolean,
     }
 )
 
@@ -128,6 +130,7 @@ async def _async_write_resource(hass: HomeAssistant, call: ServiceCall) -> Servi
             "href": subdevice.to_actual(canonical),
             "payload": w.get(ATTR_PAYLOAD),
             "settle": w.get(ATTR_SETTLE, 0.0),
+            "readback": w.get(ATTR_READBACK, True),
         }
         for canonical, w in zip(canonicals, writes_in, strict=True)
     ]
@@ -144,7 +147,9 @@ async def _async_write_resource(hass: HomeAssistant, call: ServiceCall) -> Servi
             "code": result["code"],
             "raw_code": result["raw_code"],
             "accepted": result["accepted"],
+            "response_body": result["response_body"],
             "before": result["before"],
+            "readback": result["readback"],
             "after": result["after"],
             "changed": result["changed"],
         }

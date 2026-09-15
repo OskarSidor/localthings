@@ -200,15 +200,15 @@ write is accepted (`2.04`) but the cavity never engages". Two mechanics from
 it that we did not have:
 
 1. **"The bridge deliberately does not fetch-back right after a write; that
-   GET is itself what triggers the revert."** Our write path always GETs the
-   href immediately after the POST -- that is where `after` and `changed`
-   come from -- so **every measurement in #183 and #300, and every probe in
-   this file, has that GET inside it**. If their observation generalises,
-   some of what we have recorded as "accepted then reverted" may be
-   "accepted, then knocked down by our own verification read". It does not
-   generalise to everything (the fridge's filter reset held through exactly
-   this path), but for cook fields it is untested and cheap to test -- see
-   the tooling gaps below.
+   GET is itself what triggers the revert."** Our write path always GETed
+   the href immediately after the POST -- that is where `after` and
+   `changed` come from -- so **every measurement in #183 and #300 has that
+   GET inside it**. If their observation generalises, some of what we have
+   recorded as "accepted then reverted" may be "accepted, then knocked down
+   by our own verification read". It does not generalise to everything (the
+   fridge's filter reset held through exactly this path), but for cook
+   fields it was untested, and it is why `write_resource` now takes
+   `readback: false` (see below).
 2. **`UpperTimer*` on `/mode/vs/0` populates when set through the API**,
    though a timer set on the panel never appears there. That is a
    job-shaped write sticking from idle on an oven board, which is the whole
@@ -234,6 +234,9 @@ Rules for whoever runs these:
   These are genuine attempts to make an appliance heat.
 - Run them **one service call at a time**, paste the whole response, and say
   what the panel did -- including any beep. Per trap 9, a noise is data.
+- Read `response_body` in every result, not just the code: it is the
+  board's own answer to the POST, and on some Samsung firmware that is
+  where a `"Control fail, <...>"` diagnostic lives.
 - Stop at the first rung that answers; each rung below assumes the one above.
 - `verified` is keyed by href and compares only the **last** payload written
   to that href, so a call containing two writes to the same href reports
@@ -647,24 +650,44 @@ that is what keeps a start control off every `MicroWave*` mode.
   `oic.if.s` and answers `4.05` to a write. There is no local write path to
   find there; none of the probes above apply.
 
-## Two tooling gaps worth closing first
+## Two knobs the probes above rely on
 
-**The POST response body is thrown away.** `_raw_write_blocking` does
-`code, _ = sess.post(...)`. On the fridge that body was a verbatim echo and worth
-nothing (`filter-reset.md`, trap 2), but the laundry firmware answers with
-a `"Control fail, <...>"` diagnostic, and **no oven board has ever been
-checked**. If one of these boards names its reason for discarding a cook
-write, it is sitting in a buffer we throw away on every probe above.
-Surfacing it in `write_resource`'s per-write result would cost a few lines
-and could end this investigation outright.
+Both were added for this investigation, and both change what a probe can
+see.
 
-**The immediate readback is not optional, and it should be.**
-`_raw_write_blocking` POSTs and then GETs the same href to produce `after`,
-so there is currently no way to write to one of these boards *without*
-reading it back a moment later. `smartthings-local` avoids that GET
-deliberately, on the grounds that it is what triggers the revert. Until
-`write_resource` can be told to skip it -- a per-write `readback: false`,
-with `changed` reported as unknown for that write and `verify_after` left
-as the only check -- every probe here measures the write and the readback
-together and cannot separate them. It is the smaller of the two changes and
-the one that could invalidate part of the table at the top of this file.
+**`response_body`** -- every write result now carries the POST's own decoded
+body. The fridge answers with a verbatim echo worth nothing
+(`filter-reset.md`, trap 2), but the laundry firmware answers
+`"Control fail, <...>"` and no oven board had ever been checked, because
+the write path did `code, _ = sess.post(...)` and dropped it. If one of
+these boards states its reason for discarding a cook write, it now arrives
+with the `2.04` instead of being thrown away. Nothing has to be passed to
+get it; read it on every probe above.
+
+**`readback: false`**, per write -- skips the immediate follow-up GET, on
+the `smartthings-local` observation that the fetch-back is itself what
+trips some boards' revert. With it, `after` is `{}` and `changed` is
+`null` (nothing was compared -- not the same claim as "the value isn't
+there"), and `verify_after`'s delayed read is the only check, which is the
+point. Worth re-running probes 1, 10 and 11 with it:
+
+```yaml
+action: localthings.write_resource
+data:
+  device_id: PUT_YOUR_DEVICE_ID_HERE
+  verify_after: 30
+  writes:
+    - href: /mode/vs/0
+      payload:
+        x.com.samsung.da.modes: ["Bake"]
+      readback: false
+      settle: 2
+    - href: /operational/state/vs/0
+      payload:
+        x.com.samsung.da.state: "Run"
+      readback: false
+```
+
+If a cook parameter holds at `verify_after` here and did not in #300's
+sequence B, the readback was the confound and a chunk of the table at the
+top of this file needs re-measuring.
