@@ -181,7 +181,7 @@ def _coap_accepted(code: int) -> bool:
     return (code >> 5) == 2
 
 
-def _validate_debug_write_item(item: dict) -> tuple[list[str], str, dict, float]:
+def _validate_debug_write_item(item: dict) -> tuple[list[str], str, dict, float, bool]:
     """The checks `async_raw_write` has always applied to a single write
     (issue #54), reused per-item by `async_raw_write_sequence` (issue
     #300). Payload is checked before href, matching the original
@@ -205,7 +205,11 @@ def _validate_debug_write_item(item: dict) -> tuple[list[str], str, dict, float]
             translation_domain=DOMAIN,
             translation_key="debug_settle_out_of_range",
         )
-    return path_segs, "/" + "/".join(path_segs), payload, settle
+    # Only an explicit False skips the follow-up read: a caller that knows
+    # nothing about the key (the options-flow debug panel) keeps the old
+    # readback-always behavior.
+    readback = item.get("readback") is not False
+    return path_segs, "/" + "/".join(path_segs), payload, settle, readback
 
 
 class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -2214,28 +2218,51 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # care.
     # ------------------------------------------------------------------
 
-    def _raw_write_blocking(self, path_segs: list[str], body: dict, href: str) -> tuple[int, dict]:
+    def _raw_write_blocking(
+        self, path_segs: list[str], body: dict, href: str, readback: bool = True
+    ) -> tuple[int, dict, Any]:
         """Debug primitive: POST an arbitrary patch, then read the href
-        back for ground truth. Blocking -- runs in executor."""
+        back for ground truth. Blocking -- runs in executor.
+
+        Returns `(code, new_rep, response_body)`. `response_body` is the
+        POST's own decoded body, which used to be discarded: the fridge answers with
+        a verbatim echo worth nothing (docs/investigations/filter-reset.md,
+        trap 2), but the laundry firmware answers `"Control fail, <...>"`
+        and no oven board has ever been checked -- a board's own reason for
+        refusing a write is not something to throw away on the floor.
+
+        `readback=False` skips the follow-up GET entirely, leaving
+        `new_rep` empty. `smartthings-local`'s bridge avoids that GET
+        deliberately, on the grounds that the fetch-back is itself what
+        triggers some boards' revert -- so on a resource that reverts, the
+        readback is a variable in the experiment and has to be removable.
+        """
         if self._session is None:
             self._connect_session()
         sess = self._session
         if sess is None:
             raise RuntimeError("no session")
-        code, _ = sess.post(path_segs, cbor2.dumps(body), timeout=self._POST_TIMEOUT_S)
+        code, resp = sess.post(path_segs, cbor2.dumps(body), timeout=self._POST_TIMEOUT_S)
         self._log.warning("DEBUG raw write POST %s %r → code %#04x", href, body, code)
+        response_body: Any = None
+        if resp:
+            try:
+                response_body = cbor2.loads(resp)
+            except Exception as e:
+                self._log.debug("raw write response decode failed for %s: %s", href, e)
         new_rep: dict = {}
-        try:
-            sess.pace()
-            rcode, payload = sess.get(path_segs, timeout=10.0)
-            if rcode == 0x45 and payload:
-                rep = cbor2.loads(payload)
-                if isinstance(rep, dict):
-                    self._observe.apply(href, rep, source="poll")
-                    new_rep = rep
-        except Exception as e:
-            self._log.debug("raw write follow-up read failed: %s", e)
-        return code, new_rep
+        if readback:
+            try:
+                sess.pace()
+                rcode, payload = sess.get(path_segs, timeout=10.0)
+                if rcode == 0x45 and payload:
+                    rep = cbor2.loads(payload)
+                    if isinstance(rep, dict):
+                        self._observe.apply(href, rep, source="poll")
+                        new_rep = rep
+            except Exception as e:
+                self._log.debug("raw write follow-up read failed: %s", e)
+        return code, new_rep, response_body
 
     def _raw_read_blocking(self, path_segs: list[str], href: str) -> tuple[int, dict, Any]:
         """Debug primitive: a live GET, deliberately bypassing the cache
@@ -2365,14 +2392,14 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         outer_lock = self._session_lock if hold_session_lock else contextlib.nullcontext()
         try:
             async with outer_lock:
-                for i, (path_segs, href, payload, settle) in enumerate(parsed):
+                for i, (path_segs, href, payload, settle, readback) in enumerate(parsed):
                     per_write_lock = (
                         contextlib.nullcontext() if hold_session_lock else self._session_lock
                     )
                     async with per_write_lock:
                         before = self.resource(href)
-                        code, after = await self.hass.async_add_executor_job(
-                            self._raw_write_blocking, path_segs, payload, href
+                        code, after, response_body = await self.hass.async_add_executor_job(
+                            self._raw_write_blocking, path_segs, payload, href, readback
                         )
                     last_payload_by_href[href] = payload
                     results.append(
@@ -2381,9 +2408,18 @@ class LocalThingsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "code": _coap_code_str(code),
                             "raw_code": code,
                             "accepted": _coap_accepted(code),
+                            "response_body": response_body,
                             "before": before,
+                            "readback": readback,
                             "after": after,
-                            "changed": all(after.get(k) == v for k, v in payload.items()),
+                            # None, not False, without a readback: nothing
+                            # was compared. Same "couldn't verify" posture
+                            # `held` already takes below.
+                            "changed": (
+                                all(after.get(k) == v for k, v in payload.items())
+                                if readback
+                                else None
+                            ),
                         }
                     )
                     # Under the default this wait happens inside the lock, so

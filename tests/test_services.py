@@ -53,10 +53,11 @@ class _FakeSession:
     DTLS/network involved. Modeled on test_coordinator_raw_write.py's
     _FakeRawWriteSession, extended for multi-step sequences."""
 
-    def __init__(self, post_code: int = 0x44):
+    def __init__(self, post_code: int = 0x44, post_response: object = None):
         self.post_calls: list[tuple[list[str], bytes]] = []
         self.get_calls: list[list[str]] = []
         self._post_code = post_code
+        self._post_response = post_response
         self._get_reps: dict[str, list[dict | list]] = {}
 
     def queue_get(self, href: str, rep: dict | list) -> None:
@@ -73,7 +74,9 @@ class _FakeSession:
 
     def post(self, path_segs, payload, timeout=None):
         self.post_calls.append((list(path_segs), payload))
-        return self._post_code, b""
+        if self._post_response is None:
+            return self._post_code, b""
+        return self._post_code, cbor2.dumps(self._post_response)
 
     def get(self, path_segs, timeout=None):
         self.get_calls.append(list(path_segs))
@@ -275,6 +278,91 @@ async def test_write_resource_changed_false_when_readback_differs(hass, coordina
     )
 
     assert response["results"][0]["changed"] is False
+
+
+# ----------------------------------------------------------------------
+# response_body / readback: the two knobs the oven cycle-start probes need
+# (docs/investigations/oven-cycle-start.md)
+# ----------------------------------------------------------------------
+
+
+async def test_write_resource_surfaces_the_post_response_body(hass, coordinator, device_id):
+    """The POST's own body used to go on the floor (`code, _ = sess.post(...)`).
+    The fridge answers with a verbatim echo worth nothing, but the laundry
+    firmware answers `"Control fail, <...>"` -- a board's stated reason for
+    refusing a write is worth more than the 2.04 that carries it."""
+    fake = _FakeSession(post_response={"error": "Control fail, Not Support"})
+    fake.queue_get("mode/vs/0", {"x.field": "original"})
+    coordinator._session = fake
+
+    response = await _call_write(
+        hass, device_id, writes=[{"href": "/mode/vs/0", "payload": {"x.field": "target"}}]
+    )
+
+    assert response["results"][0]["response_body"] == {"error": "Control fail, Not Support"}
+
+
+async def test_write_resource_response_body_is_none_when_the_board_answers_empty(
+    hass, coordinator, device_id
+):
+    fake = _FakeSession()
+    fake.queue_get("mode/vs/0", {"x.field": "original"})
+    coordinator._session = fake
+
+    response = await _call_write(
+        hass, device_id, writes=[{"href": "/mode/vs/0", "payload": {"x.field": "target"}}]
+    )
+
+    assert response["results"][0]["response_body"] is None
+
+
+async def test_write_resource_readback_false_skips_the_follow_up_get(hass, coordinator, device_id):
+    """`smartthings-local` reports that on some boards the fetch-back GET is
+    itself what triggers the revert, so a probe has to be able to write
+    without one. Per write, not per call: the second write here keeps its
+    readback and is the only GET on the wire."""
+    fake = _FakeSession()
+    fake.queue_get("b/vs/0", {"x": 2})
+    coordinator._session = fake
+
+    response = await _call_write(
+        hass,
+        device_id,
+        writes=[
+            {"href": "/a/vs/0", "payload": {"x": 1}, "readback": False},
+            {"href": "/b/vs/0", "payload": {"x": 2}},
+        ],
+    )
+
+    assert fake.get_calls == [["b", "vs", "0"]]
+    skipped, kept = response["results"]
+    assert skipped["readback"] is False
+    assert skipped["after"] == {}
+    # None, not False: nothing was compared, which is not the same claim as
+    # "the payload isn't there".
+    assert skipped["changed"] is None
+    assert kept["readback"] is True
+    assert kept["changed"] is True
+
+
+async def test_write_resource_readback_false_still_verifies_after(hass, coordinator, device_id):
+    """With no immediate read, verify_after's delayed one is the only check
+    left -- which is the whole point of being able to skip the other."""
+    fake = _FakeSession()
+    fake.queue_get("mode/vs/0", {"x.field": "target"})
+    coordinator._session = fake
+
+    with patch(_SLEEP_TARGET, new_callable=AsyncMock):
+        response = await _call_write(
+            hass,
+            device_id,
+            writes=[{"href": "/mode/vs/0", "payload": {"x.field": "target"}, "readback": False}],
+            verify_after=30,
+        )
+
+    assert fake.get_calls == [["mode", "vs", "0"]]
+    assert response["results"][0]["changed"] is None
+    assert response["verified"]["/mode/vs/0"]["held"] is True
 
 
 # ----------------------------------------------------------------------

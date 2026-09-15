@@ -1498,7 +1498,9 @@ async def test_options_flow_debug_edit_writes_and_shows_result(
                     "code": "2.04",
                     "raw_code": 0x44,
                     "accepted": True,
+                    "response_body": None,
                     "before": {},
+                    "readback": True,
                     "after": {"a": 1},
                     "changed": True,
                 }
@@ -1577,7 +1579,9 @@ async def test_options_flow_finish_preserves_existing_options(
                     "code": "2.04",
                     "raw_code": 0x44,
                     "accepted": True,
+                    "response_body": None,
                     "before": {},
+                    "readback": True,
                     "after": {"a": 1},
                     "changed": True,
                 }

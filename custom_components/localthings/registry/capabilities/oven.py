@@ -11,9 +11,10 @@ select via /mode/vs/0.modes (mid-cook acceptance unknown), stop via
 state='Ready'.
 
 Cycle start is not implemented: local-OCF cycle start isn't reproducible on
-this firmware. Mode writes are also unreliable -- the oven rolls them back
-once a cycle is active, so OVEN_MODE's SelectDesc is effectively read-only
-in practice.
+this firmware -- see docs/investigations/oven-cycle-start.md for what three
+boards measured and what is worth probing next. Mode writes are also
+unreliable -- the oven rolls them back once a cycle is active, so
+OVEN_MODE's SelectDesc is effectively read-only in practice.
 """
 
 from datetime import UTC, datetime, timedelta

@@ -25,7 +25,13 @@ write_resource:
         canonical resource, e.g. /mode/vs/0) and payload (a non-empty
         object sent verbatim as a partial-rep POST); settle is how many
         seconds to wait after that write before starting the next one
-        (0-30, default 0).
+        (0-30, default 0); readback (default true) is whether to read the
+        resource straight back for the "after"/"changed" fields. Set it
+        false on a board where a write is accepted and then reverted --
+        on some firmware that immediate GET is itself what triggers the
+        revert, so leaving it on makes the readback part of the
+        experiment. Without it "changed" comes back null and verify_after
+        is the only check.
       required: true
       example: >-
         [{"href": "/mode/vs/0", "payload": {"x.com.samsung.da.modes":

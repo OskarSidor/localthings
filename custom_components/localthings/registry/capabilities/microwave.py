@@ -27,6 +27,10 @@ different from an oven, and defined fresh here:
 
 Cooking-mode writes are unproven here, same caveat as oven.py's OVEN_MODE
 -- exposed as a SelectDesc for fidelity, first real-world write is the test.
+Starting a cook is a separate, unsolved problem
+(docs/investigations/oven-cycle-start.md); note that every `MicroWave*` mode
+in the corpus is `Setting`-only in modeSpec, so whatever lands there will
+not start the magnetron.
 
 DAWIT 3.0 generation (issue #433, OT80H30-class over-the-range combi):
 this board answers none of the hrefs above -- no /oven/vs/0, /mode/vs/0,
