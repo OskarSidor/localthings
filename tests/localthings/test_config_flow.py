@@ -878,8 +878,10 @@ async def test_self_signed_rejection_advances_to_the_fallback_ca_step(
     # Not an error on the host form: the next step asks for the CA.
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "fallback_ca"
-    assert CONF_CA_CERT_PEM in result["data_schema"].schema
-    assert CONF_CA_KEY_PEM in result["data_schema"].schema
+    data_schema = result["data_schema"]
+    assert data_schema is not None
+    assert CONF_CA_CERT_PEM in data_schema.schema
+    assert CONF_CA_KEY_PEM in data_schema.schema
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -1038,6 +1040,7 @@ def test_mint_self_signed_is_self_signed_sha256_and_carries_the_uuid() -> None:
     assert "BEGIN PRIVATE KEY" in key_pem
     cert = x509.load_pem_x509_certificate(fullchain.encode())
     assert cert.issuer == cert.subject
+    assert cert.signature_hash_algorithm is not None
     assert cert.signature_hash_algorithm.name == "sha256"
     subject = cert.subject.rfc4514_string()
     assert f"uuid:{uuid}" in subject
