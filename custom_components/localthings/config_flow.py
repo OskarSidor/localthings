@@ -201,6 +201,27 @@ def _normalize_pem(text: str) -> str:
     return "\n".join(lines)
 
 
+def _uuid_subject_name(uuid: str):
+    """The X.509 subject an appliance authenticates by.
+
+    TizenRT's iotivity locates the peer identity with `memmem(subject,
+    "uuid:")`, so the UUID must appear in an RDN in that form. The country
+    and organization mirror Samsung's own leaf and are cosmetic; only the
+    `uuid:` token in OU/CN is load-bearing.
+    """
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+
+    return x509.Name(
+        [
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "KR"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Samsung Electronics"),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, f"uuid:{uuid}"),
+            x509.NameAttribute(NameOID.COMMON_NAME, f"urn:uuid:{uuid}"),
+        ]
+    )
+
+
 def _mint_leaf_cert(ca_cert_pem: str, ca_key_pem: str, uuid: str) -> tuple[str, str]:
     """Mint a fresh RSA-2048 leaf cert signed by the CA.
 
@@ -211,7 +232,6 @@ def _mint_leaf_cert(ca_cert_pem: str, ca_key_pem: str, uuid: str) -> tuple[str, 
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519
     from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
-    from cryptography.x509.oid import NameOID
 
     m = re.search(
         r"(-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----)",
@@ -242,16 +262,7 @@ def _mint_leaf_cert(ca_cert_pem: str, ca_key_pem: str, uuid: str) -> tuple[str, 
     now = datetime.datetime.now(datetime.UTC)
     leaf_cert = (
         x509.CertificateBuilder()
-        .subject_name(
-            x509.Name(
-                [
-                    x509.NameAttribute(NameOID.COUNTRY_NAME, "KR"),
-                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Samsung Electronics"),
-                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, f"uuid:{uuid}"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, f"urn:uuid:{uuid}"),
-                ]
-            )
-        )
+        .subject_name(_uuid_subject_name(uuid))
         .issuer_name(ca_cert.subject)
         .public_key(leaf_key.public_key())
         .serial_number(x509.random_serial_number())
@@ -272,6 +283,50 @@ def _mint_leaf_cert(ca_cert_pem: str, ca_key_pem: str, uuid: str) -> tuple[str, 
     fullchain_pem = leaf_cert_pem.rstrip("\n") + "\n" + ca_cert_pem
     if not fullchain_pem.endswith("\n"):
         fullchain_pem += "\n"
+    return fullchain_pem, leaf_key_pem
+
+
+def _mint_self_signed(uuid: str) -> tuple[str, str]:
+    """Mint a fresh RSA-2048 leaf that signs itself, keyed to the UUID.
+
+    The AC14K_M-generation appliances (e.g. the AILITE dishwasher and TP1X
+    refrigerator families) authorize by the subject UUID against the on-device
+    ACL and do not validate the client certificate's signer, chain, or
+    signature digest, so a self-signed leaf completes the DTLS handshake and is
+    accepted -- confirmed by factorial test against two such units. This needs
+    no CA material at all, which is why it is the default the config flow tries
+    before ever asking for AC14K_M credentials.
+
+    Returns (fullchain_pem, leaf_key_pem); the fullchain is the leaf alone,
+    since it is its own issuer and there is nothing to append.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+
+    leaf_key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = _uuid_subject_name(uuid)
+
+    now = datetime.datetime.now(datetime.UTC)
+    leaf_cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(leaf_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=10 * 365))
+        .sign(leaf_key, hashes.SHA256())
+    )
+
+    fullchain_pem = leaf_cert.public_bytes(serialization.Encoding.PEM).decode()
+    if not fullchain_pem.endswith("\n"):
+        fullchain_pem += "\n"
+    leaf_key_pem = leaf_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
     return fullchain_pem, leaf_key_pem
 
 
@@ -650,6 +705,26 @@ def _mint_credentials(ca_cert_pem: str, ca_key_pem: str) -> tuple[str, str]:
     return fullchain_pem, leaf_key_pem
 
 
+def _mint_self_signed_credentials() -> tuple[str, str]:
+    """Fetch the current UUID from Samsung's cloud and mint a self-signed leaf.
+
+    The no-credentials default: only the cloud UUID is needed, not an AC14K_M
+    CA, so a first-time setup needs nothing but the appliance's IP.
+    """
+    _LOGGER.debug("Fetching Samsung cloud UUID from %s", _SAMSUNG_CLOUD_HOST)
+    try:
+        uuid = _fetch_samsung_uuid()
+    except Exception as exc:
+        _LOGGER.debug("UUID fetch failed: %s", exc, exc_info=True)
+        raise CloudUnreachable(f"Failed to fetch Samsung UUID: {exc}") from exc
+    _LOGGER.debug("Minting self-signed leaf cert for UUID %s", uuid)
+    try:
+        return _mint_self_signed(uuid)
+    except Exception as exc:
+        _LOGGER.debug("Self-signed leaf minting failed: %s", exc, exc_info=True)
+        raise CannotConnect(f"Failed to mint leaf cert: {exc}") from exc
+
+
 def _read_device(sess, host: str, port: int) -> dict:
     """Resolve this device's identity over an already-connected session.
 
@@ -784,8 +859,8 @@ def _handshake_and_read(host: str, scan: _PortScan, cert_pem: str, key_pem: str)
 
 def _probe_and_validate(
     host: str,
-    ca_cert_pem: str,
-    ca_key_pem: str,
+    ca_cert_pem: str = "",
+    ca_key_pem: str = "",
     existing_leaf: tuple[str, str] | None = None,
 ) -> dict:
     """Find the device's port, authenticate to it, and resolve its identity.
@@ -793,20 +868,36 @@ def _probe_and_validate(
     Port detection runs first and needs no credentials, so an unreachable
     host fails here rather than after a round trip to Samsung's cloud.
 
+    The credential minted depends on what was supplied. With no CA (the
+    default), a self-signed leaf is used: the AC14K_M-generation appliances
+    accept it, so most setups never need any pasted credential. When an
+    AC14K_M CA cert and key are supplied -- the fallback for a device that
+    rejected the self-signed leaf -- the leaf is signed by that CA instead.
+
     `existing_leaf` is another entry's already-minted leaf (issue #211).
     Every appliance accepts the same leaf, so adding a second device can
     skip the fetch and mint entirely -- independent of Samsung-cloud
     reachability, not merely faster. If that reused leaf turns out to be
-    stale (the UUID does rotate), a confirmed-live device rejecting it
-    re-mints and retries once, so the reuse stays self-correcting.
+    stale (the UUID does rotate) or a chain-validating device rejects it, a
+    confirmed-live device rejecting it re-mints and retries once, so the
+    reuse stays self-correcting.
+
+    Raises CertRejected when a freshly minted leaf is refused: only new
+    credentials from the caller (the AC14K_M fallback step) can change that,
+    so the retry is worthwhile solely for a reused leaf.
     """
     scan = _scan_ports(host)
+
+    def _mint() -> tuple[str, str]:
+        if ca_cert_pem and ca_key_pem:
+            return _mint_credentials(ca_cert_pem, ca_key_pem)
+        return _mint_self_signed_credentials()
 
     if existing_leaf is not None:
         cert_pem, key_pem = existing_leaf
         _LOGGER.debug("Reusing the leaf certificate from an existing entry")
     else:
-        cert_pem, key_pem = _mint_credentials(ca_cert_pem, ca_key_pem)
+        cert_pem, key_pem = _mint()
 
     try:
         info = _handshake_and_read(host, scan, cert_pem, key_pem)
@@ -816,7 +907,7 @@ def _probe_and_validate(
         if existing_leaf is None:
             raise
         _LOGGER.debug("Reused leaf rejected by %s; re-minting and retrying", host)
-        cert_pem, key_pem = _mint_credentials(ca_cert_pem, ca_key_pem)
+        cert_pem, key_pem = _mint()
         info = _handshake_and_read(host, scan, cert_pem, key_pem)
 
     return {**info, "leaf_cert_pem": cert_pem, "leaf_key_pem": key_pem}
@@ -887,17 +978,23 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._host = user_input[CONF_HOST].strip()
             existing_leaf = None
             if has_creds:
-                self._ca_cert_pem = existing[0].data[CONF_CA_CERT_PEM]
-                self._ca_key_pem = existing[0].data[CONF_CA_KEY_PEM]
+                # Reuse the first entry's credentials. That entry may be
+                # self-signed (no CA stored, empty strings here) or AC14K_M;
+                # either way its already-minted leaf is what actually gets
+                # reused, and every appliance accepts the same leaf.
+                self._ca_cert_pem = existing[0].data.get(CONF_CA_CERT_PEM, "")
+                self._ca_key_pem = existing[0].data.get(CONF_CA_KEY_PEM, "")
                 leaf_cert = existing[0].data.get(CONF_LEAF_CERT_PEM)
                 leaf_key = existing[0].data.get(CONF_LEAF_KEY_PEM)
                 if leaf_cert and leaf_key:
                     existing_leaf = (leaf_cert, leaf_key)
             else:
-                # Normalized here, not just before minting: this is also
-                # what gets stored and reused to re-mint the leaf later.
-                self._ca_cert_pem = _normalize_pem(user_input[CONF_CA_CERT_PEM])
-                self._ca_key_pem = _normalize_pem(user_input[CONF_CA_KEY_PEM])
+                # No credentials up front: default to a self-signed leaf,
+                # which the AC14K_M-generation appliances accept. The AC14K_M
+                # CA is only requested if this device rejects it, in
+                # async_step_fallback_ca.
+                self._ca_cert_pem = ""
+                self._ca_key_pem = ""
 
             try:
                 info = await self.hass.async_add_executor_job(
@@ -907,6 +1004,15 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._ca_key_pem,
                     existing_leaf,
                 )
+            except CertRejected:
+                # The self-signed leaf (or a reused one, re-minted and refused
+                # again) didn't authenticate: this device validates the
+                # certificate chain, so fall through to asking for AC14K_M.
+                _LOGGER.debug(
+                    "%s rejected the automatic certificate; requesting AC14K_M CA",
+                    self._host,
+                )
+                return await self.async_step_fallback_ca()
             except (CannotConnect, InvalidCA) as exc:
                 # Every probe failure carries the message that fits it (see
                 # CannotConnect); the log line is where the specifics live.
@@ -916,56 +1022,109 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during device probe")
                 errors["base"] = "unknown"
             else:
-                # An entry created before v4 still carries the serial-keyed
-                # unique_id until its first *live* poll adopts the UUID
-                # (coordinator._resolve_identity) -- which can be a long
-                # while for an appliance that is off, since an entry loads
-                # from its snapshot in the meantime (issue #295). The UUID
-                # check below can't see such an entry, so re-adding this
-                # very appliance during that window would be waved through
-                # as a second entry; the two would then collide the moment
-                # the older one re-keyed, and rekey_entry resolves a
-                # collision by *deleting* the duplicate rows -- taking the
-                # original entry's entity_ids, history and automations with
-                # them. Matched on the legacy key together with the host, so
-                # issue #381's two units (same serial, different addresses)
-                # stay separable.
-                legacy_unique_id = f"localthings_{info['serial']}"
-                if any(
-                    other.unique_id == legacy_unique_id
-                    and other.data.get(CONF_HOST) == self._host
-                    and CONF_DEVICE_KEY not in other.data
-                    for other in existing
-                ):
-                    return self.async_abort(reason="already_configured")
-                # Keyed on the OCF device UUID rather than the serialNum
-                # (issue #381): two units of a model that ship the same
-                # well-formed serial are indistinguishable here otherwise,
-                # and the second one is turned away as already configured.
-                await self.async_set_unique_id(f"localthings_{info['device_key']}")
-                self._abort_if_unique_id_configured()
-                if info["device_type_recognized"]:
-                    return self._create_entry(info)
-                self._pending_info = info
-                return await self.async_step_confirm_unknown_type()
+                return await self._finish_probe(info, existing)
 
-        if has_creds:
-            schema = vol.Schema({vol.Required(CONF_HOST): _TEXT})
-            step_id = "user_reuse"
-        else:
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_HOST): _TEXT,
-                    vol.Required(CONF_CA_CERT_PEM): _MULTILINE,
-                    vol.Required(CONF_CA_KEY_PEM): _MULTILINE,
-                }
-            )
-            step_id = "user"
+        # Both the first device and every later one now ask only for the host:
+        # the first tries self-signed, later ones reuse the stored leaf. The
+        # step_id still distinguishes them so their form text can differ.
+        schema = vol.Schema({vol.Required(CONF_HOST): _TEXT})
+        step_id = "user_reuse" if has_creds else "user"
 
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(schema, user_input),
             errors=errors,
+        )
+
+    async def _finish_probe(
+        self, info: dict, existing: list[config_entries.ConfigEntry]
+    ) -> ConfigFlowResult:
+        """Turn a successful probe into an entry (or a confirm/abort).
+
+        Shared by async_step_user and async_step_fallback_ca so the identity
+        de-duplication runs identically whichever credential authenticated.
+        """
+        # An entry created before v4 still carries the serial-keyed
+        # unique_id until its first *live* poll adopts the UUID
+        # (coordinator._resolve_identity) -- which can be a long while for an
+        # appliance that is off, since an entry loads from its snapshot in the
+        # meantime (issue #295). The UUID check below can't see such an entry,
+        # so re-adding this very appliance during that window would be waved
+        # through as a second entry; the two would then collide the moment the
+        # older one re-keyed, and rekey_entry resolves a collision by
+        # *deleting* the duplicate rows -- taking the original entry's
+        # entity_ids, history and automations with them. Matched on the legacy
+        # key together with the host, so issue #381's two units (same serial,
+        # different addresses) stay separable.
+        legacy_unique_id = f"localthings_{info['serial']}"
+        if any(
+            other.unique_id == legacy_unique_id
+            and other.data.get(CONF_HOST) == self._host
+            and CONF_DEVICE_KEY not in other.data
+            for other in existing
+        ):
+            return self.async_abort(reason="already_configured")
+        # Keyed on the OCF device UUID rather than the serialNum (issue #381):
+        # two units of a model that ship the same well-formed serial are
+        # indistinguishable here otherwise, and the second one is turned away
+        # as already configured.
+        await self.async_set_unique_id(f"localthings_{info['device_key']}")
+        self._abort_if_unique_id_configured()
+        if info["device_type_recognized"]:
+            return self._create_entry(info)
+        self._pending_info = info
+        return await self.async_step_confirm_unknown_type()
+
+    async def async_step_fallback_ca(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the AC14K_M CA after a device rejects the self-signed leaf.
+
+        Only reached when the automatic self-signed certificate (or a reused
+        leaf) failed to authenticate -- the small minority of appliances that
+        validate the client certificate chain. The pasted CA cert and key mint
+        a chain-signed leaf, which is then stored on the entry so the retry is
+        never needed again for this appliance.
+        """
+        existing = self.hass.config_entries.async_entries(DOMAIN)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Normalized here, not just before minting: this is also what gets
+            # stored and reused to re-mint the leaf later.
+            self._ca_cert_pem = _normalize_pem(user_input[CONF_CA_CERT_PEM])
+            self._ca_key_pem = _normalize_pem(user_input[CONF_CA_KEY_PEM])
+            try:
+                info = await self.hass.async_add_executor_job(
+                    _probe_and_validate,
+                    self._host,
+                    self._ca_cert_pem,
+                    self._ca_key_pem,
+                    None,
+                )
+            except (CannotConnect, InvalidCA) as exc:
+                # CertRejected lands here too (it is a CannotConnect): the CA
+                # the user pasted still didn't authenticate, so re-show the
+                # form with cert_rejected rather than looping back to host.
+                _LOGGER.warning("Probe of %s failed [%s]: %s", self._host, exc.error_key, exc)
+                errors["base"] = exc.error_key
+            except Exception:
+                _LOGGER.exception("Unexpected error during device probe")
+                errors["base"] = "unknown"
+            else:
+                return await self._finish_probe(info, existing)
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_CA_CERT_PEM): _MULTILINE,
+                vol.Required(CONF_CA_KEY_PEM): _MULTILINE,
+            }
+        )
+        return self.async_show_form(
+            step_id="fallback_ca",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            errors=errors,
+            description_placeholders={"host": self._host},
         )
 
     async def async_step_user_reuse(
@@ -1057,8 +1216,8 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 info = await self.hass.async_add_executor_job(
                     _probe_and_validate,
                     host,
-                    entry.data[CONF_CA_CERT_PEM],
-                    entry.data[CONF_CA_KEY_PEM],
+                    entry.data.get(CONF_CA_CERT_PEM, ""),
+                    entry.data.get(CONF_CA_KEY_PEM, ""),
                     (leaf_cert, leaf_key) if leaf_cert and leaf_key else None,
                 )
             except (CannotConnect, InvalidCA) as exc:

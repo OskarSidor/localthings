@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "삼성 가전제품 추가",
-        "description": "삼성 가전제품의 IP 주소와 기기 인증서 발급에 사용할 AC14K_M CA 인증 정보를 입력하세요.",
+        "description": "삼성 가전제품의 IP 주소를 입력하세요. LocalThings가 자체 서명 인증서로 자동으로 설정하며, 대부분의 가전제품은 그 외에 아무것도 필요하지 않습니다.",
         "data": {
-          "host": "IP 주소",
-          "ca_cert_pem": "CA 인증서(PEM)",
-          "ca_key_pem": "CA 개인 키(PEM)"
+          "host": "IP 주소"
         },
         "data_description": {
-          "host": "삼성 가전제품의 로컬 IP 주소입니다(예: 192.168.1.50).",
-          "ca_cert_pem": "PEM으로 인코딩된 AC14K_M CA 인증서 체인입니다. 모든 BEGIN/END CERTIFICATE 블록을 포함한 전체 인증서 체인 PEM 내용을 붙여 넣으세요.",
-          "ca_key_pem": "PEM으로 인코딩된 AC14K_M 개인 키입니다. BEGIN/END PRIVATE KEY 머리글과 바닥글을 포함한 전체 내용을 붙여 넣으세요."
+          "host": "삼성 가전제품의 로컬 IP 주소입니다(예: 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "삼성 가전제품의 로컬 IP 주소입니다(예: 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "AC14K_M 인증서 필요",
+        "description": "{host}이(가) 자동 인증서를 거부했으므로 기기 인증서를 발급하려면 AC14K_M CA 자격 증명이 필요합니다. 아래에 붙여넣으세요.",
+        "data": {
+          "ca_cert_pem": "CA 인증서(PEM)",
+          "ca_key_pem": "CA 개인 키(PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "PEM으로 인코딩된 AC14K_M CA 인증서 체인입니다. 모든 BEGIN/END CERTIFICATE 블록을 포함한 전체 인증서 체인 PEM 내용을 붙여 넣으세요.",
+          "ca_key_pem": "PEM으로 인코딩된 AC14K_M 개인 키입니다. BEGIN/END PRIVATE KEY 머리글과 바닥글을 포함한 전체 내용을 붙여 넣으세요."
         }
       },
       "reconfigure": {

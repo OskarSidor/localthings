@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "Samsung-Gerät hinzufügen",
-        "description": "Geben Sie die IP-Adresse Ihres Samsung-Geräts sowie die AC14K_M-CA-Zugangsdaten ein, mit denen Gerätezertifikate erstellt werden.",
+        "description": "Geben Sie die IP-Adresse Ihres Samsung-Geräts ein. LocalThings richtet es automatisch mit einem selbstsignierten Zertifikat ein – die meisten Geräte benötigen nichts weiter.",
         "data": {
-          "host": "IP-Adresse",
-          "ca_cert_pem": "CA-Zertifikat (PEM)",
-          "ca_key_pem": "CA-Privatschlüssel (PEM)"
+          "host": "IP-Adresse"
         },
         "data_description": {
-          "host": "Lokale IP-Adresse Ihres Samsung-Geräts (z. B. 192.168.1.50).",
-          "ca_cert_pem": "Die PEM-codierte AC14K_M-CA-Zertifikatskette. Fügen Sie den vollständigen Inhalt Ihrer Fullchain-PEM-Datei ein, einschließlich aller BEGIN/END CERTIFICATE-Blöcke.",
-          "ca_key_pem": "Der PEM-codierte AC14K_M-Privatschlüssel. Fügen Sie den vollständigen Inhalt einschließlich der BEGIN/END PRIVATE KEY-Kopf- und Fußzeile ein."
+          "host": "Lokale IP-Adresse Ihres Samsung-Geräts (z. B. 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "Lokale IP-Adresse Ihres Samsung-Geräts (z. B. 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "AC14K_M-Zertifikat erforderlich",
+        "description": "{host} hat das automatische Zertifikat abgelehnt und benötigt daher AC14K_M-CA-Zugangsdaten, um ein Gerätezertifikat zu erstellen. Fügen Sie sie unten ein.",
+        "data": {
+          "ca_cert_pem": "CA-Zertifikat (PEM)",
+          "ca_key_pem": "CA-Privatschlüssel (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "Die PEM-codierte AC14K_M-CA-Zertifikatskette. Fügen Sie den vollständigen Inhalt Ihrer Fullchain-PEM-Datei ein, einschließlich aller BEGIN/END CERTIFICATE-Blöcke.",
+          "ca_key_pem": "Der PEM-codierte AC14K_M-Privatschlüssel. Fügen Sie den vollständigen Inhalt einschließlich der BEGIN/END PRIVATE KEY-Kopf- und Fußzeile ein."
         }
       },
       "reconfigure": {

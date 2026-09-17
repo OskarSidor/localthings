@@ -3,16 +3,12 @@
     "step": {
       "user": {
         "title": "Añadir electrodoméstico Samsung",
-        "description": "Introduce la dirección IP de tu electrodoméstico Samsung y las credenciales AC14K_M CA usadas para emitir los certificados de dispositivo.",
+        "description": "Introduce la dirección IP de tu electrodoméstico Samsung. LocalThings lo configura automáticamente con un certificado autofirmado; la mayoría de los electrodomésticos no necesitan nada más.",
         "data": {
-          "host": "Dirección IP",
-          "ca_cert_pem": "Certificado CA (PEM)",
-          "ca_key_pem": "Clave privada CA (PEM)"
+          "host": "Dirección IP"
         },
         "data_description": {
-          "host": "Dirección IP local de tu electrodoméstico Samsung (p. ej. 192.168.1.50).",
-          "ca_cert_pem": "Cadena de certificados CA AC14K_M codificada en PEM. Pega el contenido completo de tu PEM fullchain incluyendo todos los bloques BEGIN/END CERTIFICATE.",
-          "ca_key_pem": "Clave privada AC14K_M codificada en PEM. Pega el contenido completo incluyendo la cabecera y el pie BEGIN/END PRIVATE KEY."
+          "host": "Dirección IP local de tu electrodoméstico Samsung (p. ej. 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -23,6 +19,18 @@
         },
         "data_description": {
           "host": "Dirección IP local de tu electrodoméstico Samsung (p. ej. 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "Se requiere el certificado AC14K_M",
+        "description": "{host} rechazó el certificado automático, por lo que necesita las credenciales de la CA AC14K_M para emitir un certificado de dispositivo. Pégalas a continuación.",
+        "data": {
+          "ca_cert_pem": "Certificado CA (PEM)",
+          "ca_key_pem": "Clave privada CA (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "Cadena de certificados CA AC14K_M codificada en PEM. Pega el contenido completo de tu PEM fullchain incluyendo todos los bloques BEGIN/END CERTIFICATE.",
+          "ca_key_pem": "Clave privada AC14K_M codificada en PEM. Pega el contenido completo incluyendo la cabecera y el pie BEGIN/END PRIVATE KEY."
         }
       },
       "reconfigure": {

@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "Přidat spotřebič Samsung",
-        "description": "Zadejte IP adresu vašeho spotřebiče Samsung a přihlašovací údaje CA AC14K_M použité k vydávání certifikátů zařízení.",
+        "description": "Zadejte IP adresu vašeho spotřebiče Samsung. LocalThings jej nastaví automaticky pomocí vlastnoručně podepsaného certifikátu – většina spotřebičů nepotřebuje nic dalšího.",
         "data": {
-          "host": "IP adresa",
-          "ca_cert_pem": "Certifikát CA (PEM)",
-          "ca_key_pem": "Privátní klíč CA (PEM)"
+          "host": "IP adresa"
         },
         "data_description": {
-          "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50).",
-          "ca_cert_pem": "Certifikát CA AC14K_M ve formátu PEM. Vložte celý obsah řetězce fullchain PEM včetně všech bloků BEGIN/END CERTIFICATE.",
-          "ca_key_pem": "Privátní klíč AC14K_M ve formátu PEM. Vložte celý obsah včetně hlavičky a patičky BEGIN/END PRIVATE KEY."
+          "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "Vyžadován certifikát AC14K_M",
+        "description": "{host} odmítl automatický certifikát, proto potřebuje přihlašovací údaje CA AC14K_M k vydání certifikátu zařízení. Vložte je níže.",
+        "data": {
+          "ca_cert_pem": "Certifikát CA (PEM)",
+          "ca_key_pem": "Privátní klíč CA (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "Certifikát CA AC14K_M ve formátu PEM. Vložte celý obsah řetězce fullchain PEM včetně všech bloků BEGIN/END CERTIFICATE.",
+          "ca_key_pem": "Privátní klíč AC14K_M ve formátu PEM. Vložte celý obsah včetně hlavičky a patičky BEGIN/END PRIVATE KEY."
         }
       },
       "reconfigure": {
