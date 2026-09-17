@@ -75,7 +75,7 @@ Most appliances don't need this. LocalThings sets up its secure connection on it
 
 When it is needed, LocalThings uses these credentials to prove to the appliance that it's allowed to talk to it. They're known as the `AC14K_M` credentials — a pair that's been public for years and still ships in current Samsung appliances. HA doesn't need the *appliance's* own credentials, just this shared pair, and it takes care of the rest itself once you provide it.
 
-This repo doesn't include them. For an example of how to obtain them, including fetching the AC14K_M certificate and key and checking that they pair, see the `smartthings-local` project's [`setup_cert.py`](https://github.com/QuiteYellow/SmartThings-Local/blob/main/setup_cert.py). However you obtain them, paste their contents into the "CA Certificate (PEM)" and "CA Private Key (PEM)" fields when the setup asks (Part 3). You only need to do this once — every appliance you add afterward reuses what you provided.
+This repo doesn't include them. For an example of how to obtain them, including fetching the AC14K_M certificate and key and checking that they pair, see the `smartthings-local` project's [`setup_cert.py`](https://github.com/QuiteYellow/SmartThings-Local/blob/main/setup_cert.py), run as `python setup_cert.py --fallback`: it fetches the pair and prints the two paths it wrote them to (under `certs/.bundle/`). Run without the flag, it mints a self-signed leaf instead and never fetches AC14K_M. However you obtain them, paste their contents into the "CA Certificate (PEM)" and "CA Private Key (PEM)" fields when the setup asks (Part 3). You only need to do this once — every appliance you add afterward reuses what you provided.
 
 ---
 
