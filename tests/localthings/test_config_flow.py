@@ -479,6 +479,33 @@ async def test_second_device_reuses_the_existing_leaf(
     assert FakeSession.instances[0].cert_pem == MOCK_LEAF_CERT_PEM
 
 
+async def test_reuse_prefers_an_entry_that_has_a_ca(
+    hass: HomeAssistant, monkeypatch, fake_dtls
+) -> None:
+    """A self-signed entry stores no CA. When one was added first and an
+    AC14K_M entry second, adding a further device must reuse the stored CA
+    rather than send the user back to the fallback step to re-paste it."""
+    self_signed = MockConfigEntry(
+        domain=DOMAIN,
+        data={**ENTRY_DATA, CONF_CA_CERT_PEM: "", CONF_CA_KEY_PEM: ""},
+        unique_id="localthings_selfsigned",
+    )
+    self_signed.add_to_hass(hass)
+    with_ca = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA, unique_id="localthings_withca")
+    with_ca.add_to_hass(hass)
+    _patch_clienthello(monkeypatch, {49154})
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    # The CA-bearing entry was chosen as the reuse source over the self-signed
+    # one added first, so the stored CA is carried onto the new entry.
+    assert result["data"][CONF_CA_CERT_PEM] == MOCK_CA_CERT_PEM
+
+
 async def test_rejected_reused_leaf_is_reminted(
     hass: HomeAssistant, monkeypatch, fake_dtls
 ) -> None:

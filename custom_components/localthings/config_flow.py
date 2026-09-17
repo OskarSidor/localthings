@@ -14,6 +14,7 @@ import selectors
 import socket
 import ssl
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
@@ -682,34 +683,15 @@ def _classify_handshake_failure(
     return NoDtlsServer(f"ports on {host} are reachable but none answered a DTLS handshake")
 
 
-def _mint_credentials(ca_cert_pem: str, ca_key_pem: str) -> tuple[str, str]:
-    """Fetch the current UUID from Samsung's cloud and mint a leaf cert for it."""
-    _LOGGER.debug("Fetching Samsung cloud UUID from %s", _SAMSUNG_CLOUD_HOST)
-    try:
-        uuid = _fetch_samsung_uuid()
-    except Exception as exc:
-        _LOGGER.debug("UUID fetch failed: %s", exc, exc_info=True)
-        raise CloudUnreachable(f"Failed to fetch Samsung UUID: {exc}") from exc
-    _LOGGER.debug("Got UUID: %s", uuid)
+def _mint_for_current_uuid(
+    mint: Callable[[str], tuple[str, str]],
+) -> tuple[str, str]:
+    """Fetch the current UUID from Samsung's cloud and mint a leaf with it.
 
-    _LOGGER.debug("Minting leaf cert for UUID %s", uuid)
-    try:
-        fullchain_pem, leaf_key_pem = _mint_leaf_cert(ca_cert_pem, ca_key_pem, uuid)
-    except InvalidCA:
-        _LOGGER.debug("CA credentials invalid", exc_info=True)
-        raise
-    except Exception as exc:
-        _LOGGER.debug("Leaf cert minting failed: %s", exc, exc_info=True)
-        raise CannotConnect(f"Failed to mint leaf cert: {exc}") from exc
-    _LOGGER.debug("Leaf cert minted successfully")
-    return fullchain_pem, leaf_key_pem
-
-
-def _mint_self_signed_credentials() -> tuple[str, str]:
-    """Fetch the current UUID from Samsung's cloud and mint a self-signed leaf.
-
-    The no-credentials default: only the cloud UUID is needed, not an AC14K_M
-    CA, so a first-time setup needs nothing but the appliance's IP.
+    `mint` is the per-credential minter -- ``_mint_self_signed`` for the
+    default, or a closure over ``_mint_leaf_cert`` and a CA for the fallback.
+    The UUID fetch, its cloud-unreachable classification, and the mint
+    failure wrapping are shared; only the signing differs.
     """
     _LOGGER.debug("Fetching Samsung cloud UUID from %s", _SAMSUNG_CLOUD_HOST)
     try:
@@ -717,12 +699,31 @@ def _mint_self_signed_credentials() -> tuple[str, str]:
     except Exception as exc:
         _LOGGER.debug("UUID fetch failed: %s", exc, exc_info=True)
         raise CloudUnreachable(f"Failed to fetch Samsung UUID: {exc}") from exc
-    _LOGGER.debug("Minting self-signed leaf cert for UUID %s", uuid)
+
+    _LOGGER.debug("Minting leaf cert for UUID %s", uuid)
     try:
-        return _mint_self_signed(uuid)
+        return mint(uuid)
+    except InvalidCA:
+        # Only _mint_leaf_cert raises this; the self-signed minter never does.
+        _LOGGER.debug("CA credentials invalid", exc_info=True)
+        raise
     except Exception as exc:
-        _LOGGER.debug("Self-signed leaf minting failed: %s", exc, exc_info=True)
+        _LOGGER.debug("Leaf cert minting failed: %s", exc, exc_info=True)
         raise CannotConnect(f"Failed to mint leaf cert: {exc}") from exc
+
+
+def _mint_credentials(ca_cert_pem: str, ca_key_pem: str) -> tuple[str, str]:
+    """Mint a leaf cert signed by the supplied AC14K_M CA."""
+    return _mint_for_current_uuid(lambda uuid: _mint_leaf_cert(ca_cert_pem, ca_key_pem, uuid))
+
+
+def _mint_self_signed_credentials() -> tuple[str, str]:
+    """Mint a self-signed leaf -- the no-credentials default.
+
+    Only the cloud UUID is needed, not an AC14K_M CA, so a first-time setup
+    needs nothing but the appliance's IP.
+    """
+    return _mint_for_current_uuid(_mint_self_signed)
 
 
 def _read_device(sess, host: str, port: int) -> dict:
@@ -978,14 +979,21 @@ class LocalThingsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._host = user_input[CONF_HOST].strip()
             existing_leaf = None
             if has_creds:
-                # Reuse the first entry's credentials. That entry may be
-                # self-signed (no CA stored, empty strings here) or AC14K_M;
-                # either way its already-minted leaf is what actually gets
-                # reused, and every appliance accepts the same leaf.
-                self._ca_cert_pem = existing[0].data.get(CONF_CA_CERT_PEM, "")
-                self._ca_key_pem = existing[0].data.get(CONF_CA_KEY_PEM, "")
-                leaf_cert = existing[0].data.get(CONF_LEAF_CERT_PEM)
-                leaf_key = existing[0].data.get(CONF_LEAF_KEY_PEM)
+                # Reuse an existing entry's credentials. Prefer one that has
+                # an AC14K_M CA stored, so a chain-validating appliance added
+                # after a self-signed one still finds that CA and doesn't send
+                # the user back to re-paste it. Fall back to the first entry
+                # (all self-signed) otherwise. Its already-minted leaf is what
+                # actually gets reused first -- every appliance accepts the
+                # same leaf -- and the CA only matters if that leaf is refused.
+                source = next(
+                    (e for e in existing if e.data.get(CONF_CA_CERT_PEM)),
+                    existing[0],
+                )
+                self._ca_cert_pem = source.data.get(CONF_CA_CERT_PEM, "")
+                self._ca_key_pem = source.data.get(CONF_CA_KEY_PEM, "")
+                leaf_cert = source.data.get(CONF_LEAF_CERT_PEM)
+                leaf_key = source.data.get(CONF_LEAF_KEY_PEM)
                 if leaf_cert and leaf_key:
                     existing_leaf = (leaf_cert, leaf_key)
             else:
