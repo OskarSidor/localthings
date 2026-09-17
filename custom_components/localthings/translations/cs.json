@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "Přidat spotřebič Samsung",
-        "description": "Zadejte IP adresu vašeho spotřebiče Samsung a přihlašovací údaje CA AC14K_M použité k vydávání certifikátů zařízení.",
+        "description": "Zadejte IP adresu vašeho spotřebiče Samsung. LocalThings jej nastaví automaticky pomocí vlastnoručně podepsaného certifikátu – většina spotřebičů nepotřebuje nic dalšího.",
         "data": {
-          "host": "IP adresa",
-          "ca_cert_pem": "Certifikát CA (PEM)",
-          "ca_key_pem": "Privátní klíč CA (PEM)"
+          "host": "IP adresa"
         },
         "data_description": {
-          "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50).",
-          "ca_cert_pem": "Certifikát CA AC14K_M ve formátu PEM. Vložte celý obsah řetězce fullchain PEM včetně všech bloků BEGIN/END CERTIFICATE.",
-          "ca_key_pem": "Privátní klíč AC14K_M ve formátu PEM. Vložte celý obsah včetně hlavičky a patičky BEGIN/END PRIVATE KEY."
+          "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "Lokální IP adresa vašeho spotřebiče Samsung (např. 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "Vyžadován certifikát AC14K_M",
+        "description": "{host} odmítl automatický certifikát, proto potřebuje přihlašovací údaje CA AC14K_M k vydání certifikátu zařízení. Vložte je níže.",
+        "data": {
+          "ca_cert_pem": "Certifikát CA (PEM)",
+          "ca_key_pem": "Privátní klíč CA (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "Certifikát CA AC14K_M ve formátu PEM. Vložte celý obsah řetězce fullchain PEM včetně všech bloků BEGIN/END CERTIFICATE.",
+          "ca_key_pem": "Privátní klíč AC14K_M ve formátu PEM. Vložte celý obsah včetně hlavičky a patičky BEGIN/END PRIVATE KEY."
         }
       },
       "reconfigure": {
@@ -1736,7 +1744,7 @@
       "handshake_failed": "Spotřebič odmítl DTLS handshake z důvodu, který nesouvisí s certifikátem — nejspíše kvůli neshodě protokolu nebo šifry. Přesný alert najdete v logu Home Assistanta.",
       "cloud_unreachable": "Nepodařilo se spojit s cloudovou bránou Samsung a získat UUID potřebné k vystavení certifikátu tohoto zařízení. Zkontrolujte přístup Home Assistanta k internetu a zkuste to znovu.",
       "unexpected_response": "Připojení k zařízení proběhlo úspěšně, ale nevrátilo použitelný popis zařízení. Nemusí jít o spotřebič, který tato integrace podporuje. Co zařízení odeslalo, najdete v logu Home Assistanta.",
-      "cannot_connect": "Nelze se připojit k zařízení. Ověřte, že je IP adresa dostupná a že jsou přihlašovací údaje CA správné.",
+      "cannot_connect": "K zařízení se nelze připojit. Zkontrolujte, zda je IP adresa správná a zda je spotřebič zapnutý a připojený k vaší síti.",
       "invalid_ca": "Certifikát CA nebo privátní klíč se nepodařilo načíst. Ověřte, že obsah PEM je správný a že klíč odpovídá certifikátu.",
       "unknown": "Neočekávaná chyba. Podrobnosti najdete v protokolech Home Assistant.",
       "wrong_device": "Na této adrese odpověděl spotřebič Samsung, ale není to tento — ohlásil jinou identitu. Zkontrolujte, že adresa patří tomuto spotřebiči. Chcete-li přidat ten druhý, použijte možnost Přidat zařízení."

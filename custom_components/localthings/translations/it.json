@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "Aggiungi un elettrodomestico Samsung",
-        "description": "Inserisci l'indirizzo IP del tuo dispositivo Samsung e le credenziali CA AC14K_M utilizzate per generare i certificati del dispositivo.",
+        "description": "Inserisci l'indirizzo IP del tuo dispositivo Samsung. LocalThings lo configura automaticamente con un certificato autofirmato: la maggior parte dei dispositivi non richiede altro.",
         "data": {
-          "host": "Indirizzo IP",
-          "ca_cert_pem": "Certificato CA (PEM)",
-          "ca_key_pem": "Chiave privata CA (PEM)"
+          "host": "Indirizzo IP"
         },
         "data_description": {
-          "host": "Indirizzo IP locale del tuo dispositivo Samsung (ad esempio 192.168.1.50).",
-          "ca_cert_pem": "La catena di certificati CA AC14K_M codificata in formato PEM. Incolla l'intero contenuto del tuo file PEM dell'intera catena, inclusi tutti i blocchi BEGIN/END CERTIFICATE.",
-          "ca_key_pem": "La chiave privata AC14K_M codificata in formato PEM. Incollare l'intero contenuto, inclusi l'intestazione e il piè di pagina BEGIN/END PRIVATE KEY."
+          "host": "Indirizzo IP locale del tuo dispositivo Samsung (ad esempio 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "Indirizzo IP locale del tuo dispositivo Samsung (ad esempio 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "Certificato AC14K_M richiesto",
+        "description": "{host} ha rifiutato il certificato automatico, quindi sono necessarie le credenziali della CA AC14K_M per generare un certificato del dispositivo. Incollale qui sotto.",
+        "data": {
+          "ca_cert_pem": "Certificato CA (PEM)",
+          "ca_key_pem": "Chiave privata CA (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "La catena di certificati CA AC14K_M codificata in formato PEM. Incolla l'intero contenuto del tuo file PEM dell'intera catena, inclusi tutti i blocchi BEGIN/END CERTIFICATE.",
+          "ca_key_pem": "La chiave privata AC14K_M codificata in formato PEM. Incollare l'intero contenuto, inclusi l'intestazione e il piè di pagina BEGIN/END PRIVATE KEY."
         }
       },
       "reconfigure": {
@@ -1736,7 +1744,7 @@
       "handshake_failed": "L'apparecchio ha rifiutato l'handshake DTLS per un motivo non legato al certificato, molto probabilmente un'incompatibilità di protocollo o di cifratura. Il log di Home Assistant riporta l'alert esatto inviato.",
       "cloud_unreachable": "Impossibile raggiungere il gateway cloud di Samsung per ottenere l'UUID necessario a emettere il certificato di questo dispositivo. Verifica l'accesso a internet di Home Assistant e riprova.",
       "unexpected_response": "Connessione al dispositivo riuscita, ma non ha restituito una descrizione del dispositivo utilizzabile. Potrebbe non essere un apparecchio supportato da questa integrazione. Il log di Home Assistant riporta ciò che ha inviato.",
-      "cannot_connect": "Impossibile connettersi al dispositivo. Verificare che l'indirizzo IP sia raggiungibile e che le credenziali CA siano corrette.",
+      "cannot_connect": "Impossibile connettersi al dispositivo. Verifica che l'indirizzo IP sia corretto e che il dispositivo sia acceso e connesso alla rete.",
       "invalid_ca": "Impossibile caricare il certificato CA o la chiave privata. Verificare che il contenuto del file PEM sia corretto e che la chiave corrisponda al certificato.",
       "unknown": "Errore imprevisto. Controlla i registri di Home Assistant per i dettagli.",
       "wrong_device": "A quell'indirizzo ha risposto un elettrodomestico Samsung, ma non è questo: ha dichiarato un'identità diversa. Verifica che l'indirizzo appartenga a questo dispositivo. Per aggiungere l'altro, usa Aggiungi dispositivo."

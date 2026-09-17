@@ -1690,16 +1690,12 @@
     "step": {
       "user": {
         "title": "Samsung-apparaat toevoegen",
-        "description": "Voer het IP-adres van je Samsung-apparaat en de AC14K_M-CA-inloggegevens in waarmee apparaatcertificaten worden aangemaakt.",
+        "description": "Voer het IP-adres van je Samsung-apparaat in. LocalThings stelt het automatisch in met een zelfondertekend certificaat; de meeste apparaten hebben verder niets nodig.",
         "data": {
-          "host": "IP-adres",
-          "ca_cert_pem": "CA-certificaat (PEM)",
-          "ca_key_pem": "Privésleutel van CA (PEM)"
+          "host": "IP-adres"
         },
         "data_description": {
-          "host": "Het lokale IP-adres van je Samsung-apparaat (bijvoorbeeld 192.168.1.50).",
-          "ca_cert_pem": "De PEM-gecodeerde AC14K_M-CA-certificaatketen. Plak de volledige inhoud van je fullchain-PEM, inclusief alle blokken BEGIN CERTIFICATE en END CERTIFICATE.",
-          "ca_key_pem": "De PEM-gecodeerde AC14K_M-privésleutel. Plak de volledige inhoud, inclusief de kop- en voettekst BEGIN PRIVATE KEY en END PRIVATE KEY."
+          "host": "Het lokale IP-adres van je Samsung-apparaat (bijvoorbeeld 192.168.1.50)."
         }
       },
       "user_reuse": {
@@ -1710,6 +1706,18 @@
         },
         "data_description": {
           "host": "Het lokale IP-adres van je Samsung-apparaat (bijvoorbeeld 192.168.1.50)."
+        }
+      },
+      "fallback_ca": {
+        "title": "AC14K_M-certificaat vereist",
+        "description": "{host} heeft het automatische certificaat geweigerd en heeft daarom AC14K_M CA-gegevens nodig om een apparaatcertificaat aan te maken. Plak ze hieronder.",
+        "data": {
+          "ca_cert_pem": "CA-certificaat (PEM)",
+          "ca_key_pem": "Privésleutel van CA (PEM)"
+        },
+        "data_description": {
+          "ca_cert_pem": "De PEM-gecodeerde AC14K_M-CA-certificaatketen. Plak de volledige inhoud van je fullchain-PEM, inclusief alle blokken BEGIN CERTIFICATE en END CERTIFICATE.",
+          "ca_key_pem": "De PEM-gecodeerde AC14K_M-privésleutel. Plak de volledige inhoud, inclusief de kop- en voettekst BEGIN PRIVATE KEY en END PRIVATE KEY."
         }
       },
       "reconfigure": {
@@ -1736,7 +1744,7 @@
       "handshake_failed": "Het apparaat weigerde de DTLS-handshake om een reden die niets met het certificaat te maken heeft, hoogstwaarschijnlijk een protocol- of cipher-mismatch. Het Home Assistant-logboek bevat de precieze alert die het stuurde.",
       "cloud_unreachable": "Kon de cloudgateway van Samsung niet bereiken om de UUID op te halen die nodig is om het certificaat van dit apparaat aan te maken. Controleer de internettoegang van Home Assistant en probeer het opnieuw.",
       "unexpected_response": "Verbinding met het apparaat is gelukt, maar het gaf geen bruikbare apparaatbeschrijving terug. Mogelijk is het geen apparaat dat deze integratie ondersteunt. Het Home Assistant-logboek bevat wat het stuurde.",
-      "cannot_connect": "Kan geen verbinding maken met het apparaat. Controleer of het IP-adres bereikbaar is en de CA-inloggegevens juist zijn.",
+      "cannot_connect": "Kan geen verbinding maken met het apparaat. Controleer of het IP-adres klopt en of het apparaat aanstaat en met je netwerk is verbonden.",
       "invalid_ca": "Het CA-certificaat of de privésleutel kon niet worden geladen. Controleer of de PEM-inhoud juist is en of de sleutel bij het certificaat hoort.",
       "unknown": "Onverwachte fout. Raadpleeg de Home Assistant-logboeken voor meer informatie.",
       "wrong_device": "Op dat adres antwoordde een Samsung-apparaat, maar niet dit apparaat — het meldde een andere identiteit. Controleer of het adres bij dit apparaat hoort. Gebruik Apparaat toevoegen om het andere toe te voegen."

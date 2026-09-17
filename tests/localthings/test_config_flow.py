@@ -41,14 +41,17 @@ from .conftest import (
 
 
 async def test_form_first_device(hass: HomeAssistant) -> None:
-    """First device: form asks for host, CA cert, and CA key."""
+    """First device: the form asks only for the host now. The self-signed
+    default needs no credentials, so the CA cert/key fields are gone from the
+    initial step -- they resurface only if the device rejects the leaf."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
     data_schema = result["data_schema"]
     assert data_schema is not None
-    assert CONF_CA_CERT_PEM in data_schema.schema
-    assert CONF_CA_KEY_PEM in data_schema.schema
+    assert CONF_HOST in data_schema.schema
+    assert CONF_CA_CERT_PEM not in data_schema.schema
+    assert CONF_CA_KEY_PEM not in data_schema.schema
 
 
 async def test_form_second_device_reuses_creds(hass: HomeAssistant) -> None:
@@ -66,35 +69,46 @@ async def test_form_second_device_reuses_creds(hass: HomeAssistant) -> None:
 
 
 async def test_successful_setup(hass: HomeAssistant, mock_probe) -> None:
-    """Happy path: valid IP connects, entry created with discovered port."""
+    """Happy path: a valid IP alone connects (self-signed), entry created with
+    the discovered port and no CA credentials stored."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_HOST] == MOCK_HOST
     assert result["data"][CONF_PORT] == MOCK_PORT
-    assert result["data"][CONF_CA_CERT_PEM] == MOCK_CA_CERT_PEM
+    # The default path pastes no CA, so the entry stores empty CA fields.
+    assert result["data"][CONF_CA_CERT_PEM] == ""
+    assert result["data"][CONF_CA_KEY_PEM] == ""
 
 
-async def test_setup_normalizes_messy_pasted_pem(hass: HomeAssistant, mock_probe) -> None:
+async def test_setup_normalizes_messy_pasted_pem(
+    hass: HomeAssistant, monkeypatch, fake_dtls
+) -> None:
     """A PEM with a leading UTF-8 BOM, CRLF line endings, and a stray blank
     line -- the kind a Windows text editor's copy produces, as opposed to a
     `type` dump (issue #291) -- must still be accepted and stored in its
-    normalized form, not rejected with an opaque InvalidHeader."""
+    normalized form, not rejected with an opaque InvalidHeader. The CA is now
+    pasted in the AC14K_M fallback step, reached by a device that rejects the
+    self-signed leaf."""
+    _patch_clienthello(monkeypatch, {49154})
+    FakeSession.reject_certs = {"SELFSIGNED"}
+
     messy_cert = "\ufeff" + MOCK_CA_CERT_PEM.replace("\n", "\r\n") + "\r\n\r\n"
     messy_key = "\ufeff" + MOCK_CA_KEY_PEM.replace("\n", "\r\n")
 
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "fallback_ca"
+
+    result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
-            CONF_HOST: MOCK_HOST,
             CONF_CA_CERT_PEM: messy_cert,
             CONF_CA_KEY_PEM: messy_key,
         },
@@ -289,6 +303,14 @@ def fake_dtls(monkeypatch):
         "_mint_leaf_cert",
         lambda ca_cert, ca_key, uuid: ("FULLCHAIN", "LEAFKEY"),
     )
+    # The no-credentials default mints a self-signed leaf; a deterministic
+    # stand-in keeps its cert id stable so reject_certs can target it and
+    # tests avoid a real RSA keygen.
+    monkeypatch.setattr(
+        config_flow,
+        "_mint_self_signed",
+        lambda uuid: ("SELFSIGNED", "SELFKEY"),
+    )
     monkeypatch.setattr(
         "smartthings_local.protocol.dtls_session.DtlsCoapSession",
         FakeSession,
@@ -337,11 +359,7 @@ async def test_clienthello_probe_picks_the_confirmed_port(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -373,11 +391,7 @@ async def test_probe_uses_discovered_low_port(hass: HomeAssistant, monkeypatch, 
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_PORT] == 49153
@@ -403,11 +417,7 @@ async def test_probe_falls_back_when_library_lacks_the_clienthello_probe(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_PORT] == 49154
@@ -429,11 +439,7 @@ async def test_entry_stores_resolved_identity(hass: HomeAssistant, monkeypatch, 
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -471,6 +477,33 @@ async def test_second_device_reuses_the_existing_leaf(
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_LEAF_CERT_PEM] == MOCK_LEAF_CERT_PEM
     assert FakeSession.instances[0].cert_pem == MOCK_LEAF_CERT_PEM
+
+
+async def test_reuse_prefers_an_entry_that_has_a_ca(
+    hass: HomeAssistant, monkeypatch, fake_dtls
+) -> None:
+    """A self-signed entry stores no CA. When one was added first and an
+    AC14K_M entry second, adding a further device must reuse the stored CA
+    rather than send the user back to the fallback step to re-paste it."""
+    self_signed = MockConfigEntry(
+        domain=DOMAIN,
+        data={**ENTRY_DATA, CONF_CA_CERT_PEM: "", CONF_CA_KEY_PEM: ""},
+        unique_id="localthings_selfsigned",
+    )
+    self_signed.add_to_hass(hass)
+    with_ca = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA, unique_id="localthings_withca")
+    with_ca.add_to_hass(hass)
+    _patch_clienthello(monkeypatch, {49154})
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
+    )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    # The CA-bearing entry was chosen as the reuse source over the self-signed
+    # one added first, so the stored CA is carried onto the new entry.
+    assert result["data"][CONF_CA_CERT_PEM] == MOCK_CA_CERT_PEM
 
 
 async def test_rejected_reused_leaf_is_reminted(
@@ -835,25 +868,79 @@ def test_partially_open_range_is_reported_as_no_dtls_server() -> None:
     assert err.error_key == "no_dtls_server"
 
 
-async def test_cert_rejection_surfaces_its_own_error_in_the_form(
+async def test_self_signed_default_stores_empty_ca_and_leaf(
     hass: HomeAssistant, monkeypatch, fake_dtls
 ) -> None:
-    """End to end: an appliance that rejects the certificate tells the user
-    that, rather than the blanket connectivity message."""
+    """The no-credentials happy path: host alone authenticates with a
+    self-signed leaf, and the entry stores that leaf with empty CA fields."""
     _patch_clienthello(monkeypatch, {49154})
-    FakeSession.reject_certs = {"FULLCHAIN"}
 
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
     )
 
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_CA_CERT_PEM] == ""
+    assert result["data"][CONF_CA_KEY_PEM] == ""
+    assert result["data"][CONF_LEAF_CERT_PEM] == "SELFSIGNED"
+    # The self-signed leaf is what actually reached the device.
+    assert FakeSession.instances[0].cert_pem == "SELFSIGNED"
+
+
+async def test_self_signed_rejection_advances_to_the_fallback_ca_step(
+    hass: HomeAssistant, monkeypatch, fake_dtls
+) -> None:
+    """A device that validates the certificate chain rejects the self-signed
+    default. Rather than a dead-end error, the flow advances to the AC14K_M CA
+    step; supplying a working CA then completes setup and stores it."""
+    _patch_clienthello(monkeypatch, {49154})
+    FakeSession.reject_certs = {"SELFSIGNED"}
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
+    )
+
+    # Not an error on the host form: the next step asks for the CA.
     assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "fallback_ca"
+    data_schema = result["data_schema"]
+    assert data_schema is not None
+    assert CONF_CA_CERT_PEM in data_schema.schema
+    assert CONF_CA_KEY_PEM in data_schema.schema
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM, CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM},
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_CA_CERT_PEM] == MOCK_CA_CERT_PEM
+    # The CA-signed leaf replaced the rejected self-signed one.
+    assert result["data"][CONF_LEAF_CERT_PEM] == "FULLCHAIN"
+    assert [s.cert_pem for s in FakeSession.instances] == ["SELFSIGNED", "FULLCHAIN"]
+
+
+async def test_fallback_ca_rejection_surfaces_cert_rejected_in_the_form(
+    hass: HomeAssistant, monkeypatch, fake_dtls
+) -> None:
+    """When even the pasted AC14K_M CA is refused, the fallback step re-shows
+    with the certificate error rather than the blanket connectivity message."""
+    _patch_clienthello(monkeypatch, {49154})
+    FakeSession.reject_certs = {"SELFSIGNED", "FULLCHAIN"}
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: MOCK_HOST}
+    )
+    assert result["step_id"] == "fallback_ca"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM, CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM},
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "fallback_ca"
     errors = result["errors"]
     assert errors is not None
     assert errors["base"] == "cert_rejected"
@@ -877,11 +964,7 @@ async def test_unreachable_cloud_gateway_is_reported_separately(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
 
     assert result["type"] == FlowResultType.FORM
@@ -902,11 +985,7 @@ async def test_unusable_device0_is_reported_separately(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
 
     assert result["type"] == FlowResultType.FORM
@@ -965,11 +1044,7 @@ async def test_cannot_connect(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            {
-                CONF_HOST: MOCK_HOST,
-                CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-                CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-            },
+            {CONF_HOST: MOCK_HOST},
         )
     assert result["type"] == FlowResultType.FORM
     errors = result["errors"]
@@ -977,16 +1052,34 @@ async def test_cannot_connect(hass: HomeAssistant) -> None:
     assert errors["base"] == "cannot_connect"
 
 
+def test_mint_self_signed_is_self_signed_sha256_and_carries_the_uuid() -> None:
+    """The default leaf signs itself (no CA), keeps the UUID in the subject
+    RDNs TizenRT scans, and is a single-cert chain -- the properties two live
+    AC14K_M-generation appliances accept."""
+    from cryptography import x509
+
+    from custom_components.localthings.config_flow import _mint_self_signed
+
+    uuid = "ab0b0ac4-aae9-4958-a04d-8ec36fe1b2f9"
+    fullchain, key_pem = _mint_self_signed(uuid)
+
+    assert fullchain.count("BEGIN CERTIFICATE") == 1
+    assert "BEGIN PRIVATE KEY" in key_pem
+    cert = x509.load_pem_x509_certificate(fullchain.encode())
+    assert cert.issuer == cert.subject
+    assert cert.signature_hash_algorithm is not None
+    assert cert.signature_hash_algorithm.name == "sha256"
+    subject = cert.subject.rfc4514_string()
+    assert f"uuid:{uuid}" in subject
+    assert f"urn:uuid:{uuid}" in subject
+
+
 async def test_recognized_type_skips_confirmation_step(hass: HomeAssistant, mock_probe) -> None:
     """A recognized device type creates the entry with no extra step."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
@@ -998,11 +1091,7 @@ async def test_unknown_type_shows_confirmation_step(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "confirm_unknown_type"
@@ -1028,11 +1117,7 @@ async def test_unknown_type_step_description_makes_no_version_claim(
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_HOST: MOCK_HOST,
-            CONF_CA_CERT_PEM: MOCK_CA_CERT_PEM,
-            CONF_CA_KEY_PEM: MOCK_CA_KEY_PEM,
-        },
+        {CONF_HOST: MOCK_HOST},
     )
     assert result["step_id"] == "confirm_unknown_type"
 
