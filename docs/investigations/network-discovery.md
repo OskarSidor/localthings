@@ -253,8 +253,14 @@ port sweep:
 | `/oic/d` | 2.05, 163 bytes, **carrying `di`**, on every run |
 | `/oic/p` | 2.05, 336 bytes (`mnmn`, `mnmo`, `mnfv`, ...), on every run |
 
-The directory carries no OCF 1.0 `eps`. It uses the older per-link policy
-instead, which is the form `discover_ocf_secure_ports` falls back to:
+The directory carries no OCF 1.0 `eps` — but that is the Accept option's
+doing, not the board's omission. Both stock stacks pick the `/oic/res`
+representation from the request's Accept, and Accept 60 (what the probe sends
+on every first block) selects the OIC 1.1 form, which has no `eps` key. It
+falls back to the older per-link policy instead, which is the shape
+`discover_ocf_secure_ports` reads, and asking for the dialect that *would*
+carry `eps` is refused outright — see [Corroboration on two more
+boards](#corroboration-on-two-more-boards) below:
 
 ```
 /oic/sec/doxm   p: {bm: 1, sec: True,  port: 49154, x.org.iotivity.tls: 0}
@@ -328,18 +334,76 @@ What it unlocks, in the order the value lands:
    all. Keep the sweep behind it: a UDP read can be lost, some board may
    answer neither form, and setup is the worst place to discover that.
 
-Confirmed on one board, over seven runs. What is still unknown is narrower
-than it was: whether the older ARTIK051-era families answer plaintext at
-all, and whether any family declares `/oic/d` `sec: True` and so refuses to
-identify itself unauthenticated. The onboarding worry that sat here is
+### Corroboration on two more boards
+
+The `smartthings-local` author (QuiteYellow) reproduced this against a dryer
+and an oven, which settles the `eps` question the item-3 fast path turns on
+and carries items 1 and 3 onto two more boards.
+
+**Why the directory has no `eps`.** Both stock stacks pick the `/oic/res`
+representation from the request's Accept option (RT-OCF
+`utils/rt_data_handler.c:71`, iotivity-lite `api/oc_ri.c:840`). Accept 60
+selects the OIC 1.1 form, which has none; asking for the OCF 1.0 dialect that
+would carry it is declined:
+
+| request | dryer, DTLS | oven, DTLS | oven, plaintext |
+| --- | --- | --- | --- |
+| Accept 60 | 2.05, 1727 B, 15 links, 0 `eps` | 2.05, 1629 B, 14 links, 0 `eps` | 2.05, 1629 B, 14 links, 0 `eps` |
+| Accept 10000 | 4.06 | 4.06 | 4.06 |
+
+Accept was the only live variable; adding the content-format-version option
+(2049) reproduced each row. The `4.06` is the format declined after a clean
+parse — a `4.00` would mean a malformed request — and the oven's plaintext
+and DTLS answers agree to the byte, so the refusal is the device's, not the
+transport's. So `eps` is not merely unselected under Accept 60; the dialect
+that carries it is unavailable on these boards. The filtered `rt=` query
+sidesteps the question entirely — both stacks honour it in either dialect,
+and a doxm link carries whichever form the board speaks — so
+`discover_ocf_secure_ports` is being reordered to try the filtered query
+first and the full directory behind it.
+
+**The plaintext port, and reaching it.** On these two boards the directory
+names a port only for the links it marks secure, so the plaintext responder
+port is absent from it, and a unicast GET to 5683 is silent — unlike this
+dishwasher, which answers 5683 with a reply from an ephemeral port. Multicast
+is what locates the port there: the reply's source port is the answer
+(`ocf_multicast.discover_ocf_responder_ports`), 49154 for the dryer and 49153
+for the oven, first attempt. Read unauthenticated on that port:
+
+| | dryer :49154 | oven :49153 |
+| --- | --- | --- |
+| `/oic/res` | 2.05, 1727 B, 2 blocks | 2.05, 1629 B, 2 blocks |
+| `/oic/res?rt=oic.r.doxm` | 2.05, 149 B, 1 block | 2.05, 147 B, 1 block |
+| `/oic/d` | 2.05, 153 B, `di` matching its DTLS read | 2.05, 149 B, `di` matching |
+
+The filtered query is 147 B on the oven and 149 B on the dryer, against this
+dishwasher's 147 B, so item 1's `di` check and item 3's one-datagram fast
+path both hold on two more boards. Two caveats travel with them: locating
+that responder port needs a shared segment, so on a routed install the DHCP
+sighting still crosses while the multicast port lookup stops at the router
+(item 2's OUI matcher inherits the same limit); and whether this dishwasher's
+own board answers the OCF 1.0 dialect is still open — one GET with Accept
+`0x2710` against it would say.
+
+Measured on this dishwasher over seven runs, and the `di` check and filtered
+fast path corroborated on the dryer and oven above. What is still unknown is
+narrower than it was: whether the older ARTIK051-era families answer
+plaintext at all, and whether any family declares `/oic/d` `sec: True` and so
+refuses to identify itself unauthenticated. The onboarding worry that sat here is
 answered for this unit -- it is onboarded, in service, and still answers.
 
-One caution for whoever builds on this. Four claims in this document were
-written from what `smartthings-local`'s docstrings and the OCF spec imply,
-and measurement contradicted each one: that a continuation to 5683 is what
-stalls a blockwise read (it was a fresh token), that `/oic/res` advertises
-`eps` (it advertises none), that the directory therefore can't name the port
-(the filtered query does), and, in the other direction, that `/oic/res` is
-unreliable (it was a client that didn't retransmit). The probe used is
-`docs/investigations/ocf_plaintext_probe.py`; run it before trusting a line
-of this.
+One caution for whoever builds on this. Some claims here were first written
+from what the OCF spec and a quick reading of `smartthings-local` seemed to
+imply, and measurement revised them: that `/oic/res` advertises `eps` (under
+Accept 60 it advertises none, and the dialect that carries it is refused),
+and, in the other direction, that `/oic/res` is unreliable (it was a client
+that didn't retransmit). Two others were not the library being wrong but this
+draft second-guessing it: `protocol/ocf_discovery` already documents both the
+doxm-link fallback and that a board can name a port "outside a caller's
+conventional scan set" (`:13-16`, unchanged from 0.1.11 through 0.1.17). And
+the token-versus-port stall was never actually disentangled here —
+`_CONTINUATIONS` stops at the first candidate that answers, so with the
+stable-token, answering-port form tried first and working, the 5683 and
+fresh-token variants never went on the wire, as the bullet above already
+says. The probe used is `docs/investigations/ocf_plaintext_probe.py`; run it
+before trusting a line of this.
