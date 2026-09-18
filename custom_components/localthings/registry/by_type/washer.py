@@ -15,6 +15,12 @@ REGISTRY = DeviceRegistry(
             laundry.BUZZER_SOUND,
             laundry.JOB_BEGINNING_STATUS,
             common.WATER_METER,
+            # Microfiber laundry-lint filter unit (AMF, issue #475) shares
+            # this registry and adds a water/microfiber filter plus a
+            # blockage notice; harmless on plain washers, which don't report
+            # either href.
+            common.WATER_FILTER,
+            common.FILTER_STATUS,
             operational.OPERATIONAL_STATE,
             dishwasher.DIAGNOSIS,
         ]

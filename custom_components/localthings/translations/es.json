@@ -280,6 +280,9 @@
       "door_open": {
         "name": "Puerta"
       },
+      "filter_blockage": {
+        "name": "Obstrucción del filtro"
+      },
       "filter_door_status": {
         "name": "Puerta del filtro"
       },
@@ -1820,6 +1823,9 @@
       },
       "sound": {
         "name": "Sonido"
+      },
+      "station_light": {
+        "name": "Luz de la estación"
       },
       "storm_wash": {
         "name": "Lavado Tormenta+"

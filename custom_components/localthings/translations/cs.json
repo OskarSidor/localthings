@@ -58,6 +58,9 @@
       "door_open": {
         "name": "Dvířka"
       },
+      "filter_blockage": {
+        "name": "Ucpání filtru"
+      },
       "filter_door_status": {
         "name": "Dvířka filtru"
       },
@@ -1598,6 +1601,9 @@
       },
       "sound": {
         "name": "Zvuk"
+      },
+      "station_light": {
+        "name": "Světlo stanice"
       },
       "storm_wash": {
         "name": "Storm Wash+"

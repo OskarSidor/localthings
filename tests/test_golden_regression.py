@@ -1550,6 +1550,46 @@ def test_registry_reproduces_golden_state_keys_for_range_tp1x_da_ks_range_0101x(
     )
 
 
+def test_registry_reproduces_golden_state_keys_for_vacuum_station_vs9700():
+    """VS9700 stick-vacuum clean station (issue #478) -- resolves via
+    /oic/d's x.com.st.d.stickcleaner, and now binds the station light and
+    Do Not Disturb toggle it also reports."""
+    from tests.conftest import _load_device
+
+    resources = _load_device("vacuum_station_vs9700")
+    golden = json.loads((GOLDEN / "vacuum_station_vs9700.json").read_text())
+    state_keys = _new_state_keys(
+        "vacuum_station_vs9700",
+        resources,
+        device_types=("oic.wk.d", "x.com.st.d.stickcleaner"),
+    )
+    assert set(state_keys) == set(golden["state_keys"]), (
+        f"state_keys mismatch:\n"
+        f"  extra:   {sorted(set(state_keys) - set(golden['state_keys']))}\n"
+        f"  missing: {sorted(set(golden['state_keys']) - set(state_keys))}"
+    )
+
+
+def test_registry_reproduces_golden_state_keys_for_microfiber():
+    """Microfiber laundry-lint filter appliance (issue #475) -- resolves to
+    the washer registry via /oic/d's x.com.st.d.microfiberfilter, and binds
+    its water/microfiber filter plus /filterstatus/vs/0 blockage notice."""
+    from tests.conftest import _load_device
+
+    resources = _load_device("microfiber")
+    golden = json.loads((GOLDEN / "microfiber.json").read_text())
+    state_keys = _new_state_keys(
+        "microfiber",
+        resources,
+        device_types=("oic.wk.d", "x.com.st.d.microfiberfilter"),
+    )
+    assert set(state_keys) == set(golden["state_keys"]), (
+        f"state_keys mismatch:\n"
+        f"  extra:   {sorted(set(state_keys) - set(golden['state_keys']))}\n"
+        f"  missing: {sorted(set(golden['state_keys']) - set(state_keys))}"
+    )
+
+
 def test_resources_from_batch_preferred_over_flat():
     from tests.conftest import _resources_from_dump
 

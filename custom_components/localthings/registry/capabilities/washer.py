@@ -88,15 +88,40 @@ def _enabled_write(field):
     return write
 
 
+def _wash_control_present(name):
+    """Gate a /washer/vs/0 select on the device reporting the control at all
+    -- either its current value (`x.com.samsung.da.<name>`) or its
+    supported-values list (`...supported<Name>`).
+
+    A real washer reports at least one of the two (a top-load WA8000T, for
+    instance, has spin/rinse but no water-temperature field -- it sets
+    temperature via a water valve -- so its water-temperature select was a
+    valueless, optionless phantom). A device that shares this registry
+    without the wash surface reports neither: the microfiber lint filter
+    (issue #475) answers /washer/vs/0 with an empty rep, and these writable
+    selects would otherwise bind against nothing and post to a resource it
+    does not support.
+    """
+    value = f"x.com.samsung.da.{name}"
+    supported = f"x.com.samsung.da.supported{name[0].upper()}{name[1:]}"
+    return lambda rep, resources: value in rep or supported in rep
+
+
 WASHER_SETTINGS = Capability(
     href="/washer/vs/0",
     entities=(
+        # The three wash-control selects self-gate on the device reporting
+        # the control at all (see _wash_control_present) -- invisible on real
+        # washers, which always report at least the value or its supported
+        # list, but it drops the optionless writable phantoms a device
+        # sharing this registry without a wash surface would otherwise get.
         SelectDesc(
             key="wash_temperature",
             field="x.com.samsung.da.waterTemperature",
             icon="mdi:thermometer-water",
             entity_category="config",
             options_field="x.com.samsung.da.supportedWaterTemperature",
+            exists_fn=_wash_control_present("waterTemperature"),
             write_fn=lambda p, rep, href=None: (
                 ["washer", "vs", "0"],
                 {"x.com.samsung.da.waterTemperature": p},
@@ -108,6 +133,7 @@ WASHER_SETTINGS = Capability(
             icon="mdi:sync",
             entity_category="config",
             options_field="x.com.samsung.da.supportedSpinLevel",
+            exists_fn=_wash_control_present("spinLevel"),
             write_fn=lambda p, rep, href=None: (
                 ["washer", "vs", "0"],
                 {"x.com.samsung.da.spinLevel": p},
@@ -119,6 +145,7 @@ WASHER_SETTINGS = Capability(
             icon="mdi:water-sync",
             entity_category="config",
             options_field="x.com.samsung.da.supportedRinseCycles",
+            exists_fn=_wash_control_present("rinseCycles"),
             write_fn=lambda p, rep, href=None: (
                 ["washer", "vs", "0"],
                 {"x.com.samsung.da.rinseCycles": p},

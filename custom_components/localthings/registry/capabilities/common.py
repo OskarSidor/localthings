@@ -671,6 +671,31 @@ WATER_FILTER = Capability(
     ),
 )
 
+# A separate blockage notice some filter appliances report alongside the
+# usage counter (issue #475's AMF microfiber-filter unit). filterStatusNotice
+# is one of supportedFilterStatusNotice ("Normal"/"Blockage"); the fields are
+# bare, not `x.com.samsung.da.`-prefixed. Modeled as a problem binary_sensor
+# rather than folded into WATER_FILTER's filter_status enum -- it is a
+# distinct resource on its own href with its own vocabulary, and a device can
+# report either without the other.
+FILTER_STATUS = Capability(
+    href="/filterstatus/vs/0",
+    poll_tier="warm",
+    entities=(
+        BinarySensorDesc(
+            key="filter_blockage",
+            field="filterStatusNotice",
+            device_class="problem",
+            entity_category="diagnostic",
+            icon="mdi:filter-remove",
+            # Case-insensitive, matching WATER_FILTER.filter_status's own
+            # .lower() -- a firmware casing variant ("blockage"/"BLOCKAGE")
+            # must not silently read as no-problem.
+            value_fn=lambda v: v.lower() == "blockage" if isinstance(v, str) else None,
+        ),
+    ),
+)
+
 # AI energy-saving level -- '0' is off, supportedAiLevel lists the
 # additional level(s) offered ('1' meaning just "on" on most hardware,
 # multi-level on some). Verified cross-family: fridge (issue #21) and
