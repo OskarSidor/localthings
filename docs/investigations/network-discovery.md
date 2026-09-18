@@ -364,11 +364,12 @@ first and the full directory behind it.
 
 **The plaintext port, and reaching it.** On these two boards the directory
 names a port only for the links it marks secure, so the plaintext responder
-port is absent from it, and a unicast GET to 5683 is silent — unlike this
-dishwasher, which answers 5683 with a reply from an ephemeral port. Multicast
-is what locates the port there: the reply's source port is the answer
-(`ocf_multicast.discover_ocf_responder_ports`), 49154 for the dryer and 49153
-for the oven, first attempt. Read unauthenticated on that port:
+port is absent from it. Both answer a unicast GET to 5683 all the same,
+exactly as this dishwasher does, and the reply comes from an ephemeral
+socket. Multicast finds that same socket on a shared segment: the reply's
+source port is the answer (`ocf_multicast.discover_ocf_responder_ports`),
+49154 for the dryer and 49153 for the oven, first attempt. Read
+unauthenticated on that socket:
 
 | | dryer :49154 | oven :49153 |
 | --- | --- | --- |
@@ -378,12 +379,80 @@ for the oven, first attempt. Read unauthenticated on that port:
 
 The filtered query is 147 B on the oven and 149 B on the dryer, against this
 dishwasher's 147 B, so item 1's `di` check and item 3's one-datagram fast
-path both hold on two more boards. Two caveats travel with them: locating
-that responder port needs a shared segment, so on a routed install the DHCP
-sighting still crosses while the multicast port lookup stops at the router
-(item 2's OUI matcher inherits the same limit); and whether this dishwasher's
-own board answers the OCF 1.0 dialect is still open — one GET with Accept
-`0x2710` against it would say.
+path both hold on two more boards. The same filtered query sent to 5683
+returns the same `p: {bm: 1, sec: True, port: …}` on both, so neither check
+depends on locating the ephemeral port first, and neither needs a shared
+segment. What is still open is whether this dishwasher's own board answers
+the OCF 1.0 dialect — one GET with Accept `0x2710` against it would say.
+
+**Which ports are bound, and why.** These two appliances run IoTivity
+*classic*, which their own device log names: `ocstack.c`, `caipadapter.c`,
+`caprotocolmessage.c` and `ca_adapter_net_ssl.c`, alongside Samsung's
+`cloud_manager.c` and `micom_manager.c`. Line anchors in that log put it in
+the 1.2.x era, and Samsung adds log statements that appear in no stock
+release, so 1.2.1 below is reference source for the family and not a
+firmware rip. `CAInitializeIPGlobals` opens four IPv4 sockets
+(`caipadapter.c:203-208`, constants from `caipinterface.h:163-164`):
+
+| socket | bound port |
+| --- | --- |
+| `u4` unicast plaintext | `0`, kernel-assigned |
+| `u4s` unicast secure | `0`, kernel-assigned |
+| `m4` multicast plaintext | `CA_COAP`, 5683 |
+| `m4s` multicast secure | `CA_SECURE_COAP`, 5684 |
+
+`CACreateSocket` binds every one of them to `INADDR_ANY`
+(`caipserver.c:656-745`), so both standard ports are live wildcard sockets
+and a *unicast* datagram addressed to either one lands on it. That is why
+5683 serves a unicast `/oic/res`, and why a DTLS ClientHello to 5684 draws a
+first flight.
+
+Answers leave from `u4`/`u4s`, the kernel-assigned pair, which is also why
+the two ports seen on each board are adjacent: the pair is created back to
+back (`caipserver.c:903-904`), giving the dryer 49154 and 49155 and the oven
+49153 and 49154.
+
+None of that is Samsung-specific, which is what makes 5683 a better first
+tier than the `49152-49160` band for anything in this family. It is also
+not general: RT-OCF binds 5683 for multicast and its DTLS socket to port 0
+with nothing on 5684 (`rt_udp.c:152,164`), and iotivity-lite creates a
+plaintext multicast socket on 5683 and assigns its secure port dynamically
+(`port/linux/ipadapter.c:79,1491`). OCF Core is weaker still: §12.2.9 fixes
+5683 as the multicast listen port and requires `/oic/res`, `/oic/d` and
+`/oic/p` on an unsecured endpoint, but no clause puts the unsecured
+*unicast* endpoint on any particular port, and every 5684 in Core 2.2.8 is
+`coap+tcp` default-port text. Read the directory first; keep a fallback
+behind it.
+
+**A port scan has to select on the reply's source port.** Because these
+boards answer on 5684 as well as on their real secure port, a scan that
+records the port it dialled sees two listeners and may dial the wrong one.
+`smartthings-local`'s `probe_dtls_ports` did exactly that until it started
+selecting on `responder_port`. `_clienthello_scan` collects `result.port`
+the same way (`config_flow.py:495-500`), and is correct today only because
+`PROBE_PORT_RANGE` stops at 49160 and never dials 5684. Widening it to the
+standard port wants `responder_port` first, from a `smartthings-local`
+release that carries it.
+
+**Silence on 5683 is not proof of absence.** Two things produce it on a
+board that is answering. A stateful firewall or a NAT between Home
+Assistant and the appliance matches the return packet against the tuple the
+request went out on, and a reply from `u4` is a new inbound flow by that
+test, so an ordinary `ESTABLISHED,RELATED` accept drops it; on UniFi the
+rule needs `Connection State: All`, and "Return Traffic" is the setting that
+looks right and fails. Docker's bridge NAT imposes the same asymmetry,
+which is why a host-networked container sees 5683 answer where a bridged one
+does not. Separately, these boards wedge: after one reconnect the dryer went
+quiet on 5683 and on every DTLS port in the band for about three minutes.
+The band sweep is what found it again, while 5683 was still dead, so the
+session came back well before a directory-only path could have restored it.
+
+That is the case for keeping the sweep behind the directory read even once
+the 5683 mechanism is confirmed on every board. A board that answers 5683
+on a good day can still be a board that answers only its secure port right
+now, and the tier that recovers it is the one that dials ports directly. A
+discovery flow that reads one timeout as "no OCF here" will sometimes be
+wrong about a device that answers a minute later.
 
 Measured on this dishwasher over seven runs, and the `di` check and filtered
 fast path corroborated on the dryer and oven above. What is still unknown is
