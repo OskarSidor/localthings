@@ -233,6 +233,11 @@ _OIC_TYPE_TO_KEY: dict[str, str] = {
     "x.com.st.d.airqualitysensor": "air_monitor",
     "x.com.st.d.dehumidifier": "dehumidifier",
     "x.com.st.d.hood": "range_hood",  # AHD-WW-TP1-22-COMMON
+    # Microfiber laundry-lint filter appliance (AMF-WW-TP1-22-COMMON, issue
+    # #475). Reports the washer resource surface -- washer course/settings,
+    # job-beginning status, operational state -- plus its microfiber/water
+    # filter, so it shares the washer registry rather than getting its own.
+    "x.com.st.d.microfiberfilter": "washer",
     "x.com.st.d.stickcleaner": "vacuum_station",
     "x.com.st.d.steamcloset": "air_dresser",
     "x.com.st.d.winecellar": "refrigerator",  # issue #328 -- same TP1X_REF_21K board

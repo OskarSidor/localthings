@@ -1,0 +1,344 @@
+{
+  "device0": [
+    {
+      "rt": [
+        "x.com.samsung.devcol",
+        "oic.wk.col"
+      ],
+      "if": [
+        "oic.if.baseline",
+        "oic.if.ll",
+        "oic.if.b"
+      ]
+    },
+    {
+      "href": "/alarms/vs/0",
+      "rep": {
+        "x.com.samsung.da.items": [
+          {
+            "x.com.samsung.da.id": "0",
+            "x.com.samsung.da.description": "Alarm",
+            "x.com.samsung.da.alarmType": "Device",
+            "x.com.samsung.da.code": "DA_VCS_E_",
+            "x.com.samsung.da.triggeredTime": "2026-09-16T02:22:16",
+            "x.com.samsung.da.state": "Created"
+          }
+        ],
+        "href": "/alarms/vs/0"
+      }
+    },
+    {
+      "href": "/component/station/dustbag/vs/0",
+      "rep": {
+        "x.com.samsung.da.status": "normal",
+        "x.com.samsung.da.supportedStatus": [
+          "full",
+          "normal"
+        ],
+        "href": "/component/station/dustbag/vs/0",
+        "rt": [
+          "x.com.samsung.da.dustbag"
+        ],
+        "if": [
+          "oic.if.baseline",
+          "oic.if.a"
+        ]
+      }
+    },
+    {
+      "href": "/component/station/dustbagusage/vs/0",
+      "rep": {
+        "x.com.samsung.da.dustbagPrevUsage": "0",
+        "x.com.samsung.da.dustbagUsage": "980",
+        "href": "/component/station/dustbagusage/vs/0"
+      }
+    },
+    {
+      "href": "/configuration/vs/0",
+      "rep": {
+        "x.com.samsung.da.region": "0000000000",
+        "href": "/configuration/vs/0"
+      }
+    },
+    {
+      "href": "/connectionconfig/vs/0",
+      "rep": {
+        "autoReconnectionMinVersion": "1.0",
+        "autoReconnection": "true",
+        "autoReconnectionProtocolType": [
+          "helper_hotspot",
+          "ble_ocf"
+        ],
+        "supportedWiFiAuthType": [
+          "OPEN",
+          "WEP",
+          "WPA-PSK",
+          "WPA2-PSK",
+          "SAE"
+        ],
+        "supportedWiFiCryptoType": [
+          "TKIP",
+          "AES",
+          "WEP-64",
+          "WEP-128"
+        ],
+        "supportedWiFiFreq": [
+          "2.4G"
+        ],
+        "calmConnectionCare": {
+          "version": "1.0",
+          "role": [
+            "things"
+          ]
+        }
+      }
+    },
+    {
+      "href": "/dnd/vs/0",
+      "rep": {
+        "x.com.samsung.da.startTime": "00:00:00",
+        "x.com.samsung.da.endTime": "00:00:00",
+        "x.com.samsung.da.timezone": "N/A",
+        "x.com.samsung.da.startTimeOffset": "0",
+        "x.com.samsung.da.value": "false",
+        "x.com.samsung.da.option": {
+          "x.com.samsung.da.lighting": "Enable"
+        },
+        "href": "/dnd/vs/0"
+      }
+    },
+    {
+      "href": "/energy/consumption/vs/0",
+      "rep": {
+        "x.com.samsung.da.cumulativePower": "980",
+        "x.com.samsung.da.cumulativeUnit": "Wh",
+        "href": "/energy/consumption/vs/0"
+      }
+    },
+    {
+      "href": "/file/information/vs/0",
+      "rep": {
+        "x.com.samsung.timeoffset": "+00:00",
+        "x.com.samsung.supprtedtype": 1,
+        "href": "/file/information/vs/0"
+      }
+    },
+    {
+      "href": "/information/vs/0",
+      "rep": {
+        "x.com.samsung.da.modelNum": "A-VSWW-TP1-23-VS9700|50025842|80030200001711000802000000000000",
+        "x.com.samsung.da.description": "A-VSWW-TP1-23-VS9700",
+        "x.com.samsung.da.serialNum": "**REDACTED**",
+        "x.com.samsung.da.otnDUID": "**REDACTED**",
+        "x.com.samsung.da.items": [
+          {
+            "x.com.samsung.da.id": "0",
+            "x.com.samsung.da.description": "Version",
+            "x.com.samsung.da.type": "Software",
+            "x.com.samsung.da.number": "26072000",
+            "x.com.samsung.da.newVersionAvailable": "0"
+          },
+          {
+            "x.com.samsung.da.id": "1",
+            "x.com.samsung.da.description": "Version",
+            "x.com.samsung.da.type": "Firmware",
+            "x.com.samsung.da.number": "00258B26030600",
+            "x.com.samsung.da.newVersionAvailable": "0"
+          },
+          {
+            "x.com.samsung.da.id": "2",
+            "x.com.samsung.da.description": "Version",
+            "x.com.samsung.da.type": "Firmware",
+            "x.com.samsung.da.number": "00253B26072100",
+            "x.com.samsung.da.newVersionAvailable": "0"
+          }
+        ],
+        "x.com.samsung.da.diagProtocolType": "BLE_OCF",
+        "x.com.samsung.da.diagLogType": [
+          "errCode",
+          "dump"
+        ],
+        "x.com.samsung.da.diagDumpType": "file",
+        "x.com.samsung.da.diagEndPoint": "SSM",
+        "x.com.samsung.da.diagMnid": "0AJT",
+        "x.com.samsung.da.diagSetupid": "VS2",
+        "x.com.samsung.da.diagMinVersion": "3.0",
+        "x.com.samsung.da.diagTsId": "DA01",
+        "href": "/information/vs/0"
+      }
+    },
+    {
+      "href": "/lighting/vs/0",
+      "rep": {
+        "x.com.samsung.da.lighting": "On",
+        "href": "/lighting/vs/0"
+      }
+    },
+    {
+      "href": "/mode/ai/vs/0",
+      "rep": {
+        "x.com.samsung.da.mode.ai": "not supporting",
+        "href": "/mode/ai/vs/0"
+      }
+    },
+    {
+      "href": "/notification/context/stick/operation/vs/0",
+      "rep": {
+        "x.com.samsung.da.stick.operation": "On",
+        "href": "/notification/context/stick/operation/vs/0"
+      }
+    },
+    {
+      "href": "/notification/context/vs/0",
+      "rep": {
+        "supportedContexts": [
+          "incomingCall",
+          "messageReceived"
+        ],
+        "supportCustomContent": false,
+        "href": "/notification/context/vs/0"
+      }
+    },
+    {
+      "href": "/otninformation/vs/0",
+      "rep": {
+        "x.com.samsung.da.target": "",
+        "x.com.samsung.da.newVersionAvailable": "false",
+        "otnStatus": "None",
+        "flashingProgress": "0",
+        "otnCompleteDate": "noHistory",
+        "scheduledTime": "None",
+        "swVersionInfo": {
+          "platform": "Tizen Lite",
+          "oneUiVersion": "7.0 Stick vacuum",
+          "osVersion": "4.0"
+        },
+        "otnList": [
+          {
+            "type": "WIFI",
+            "modelId": "A-VSWW-TP1-23-VS9700",
+            "versions": [
+              "51260720"
+            ],
+            "visVersion": "260720"
+          },
+          {
+            "type": "Micom",
+            "modelId": "063050025842FFFFFFFF",
+            "versions": [
+              "26030600",
+              "FFFFFFFF"
+            ],
+            "visVersion": "260306"
+          },
+          {
+            "type": "Micom",
+            "modelId": "863050025342FFFFFFFF",
+            "versions": [
+              "26072100",
+              "FFFFFFFF"
+            ],
+            "visVersion": "260721"
+          }
+        ]
+      }
+    },
+    {
+      "href": "/realtimenotiforclient/vs/0",
+      "rep": {
+        "x.com.samsung.da.timeforshortnoti": "0",
+        "x.com.samsung.da.periodicnotisubscription": "true",
+        "href": "/realtimenotiforclient/vs/0"
+      }
+    },
+    {
+      "href": "/selfcheck/vs/0",
+      "rep": {
+        "x.com.samsung.da.supportedActions": [
+          "Start",
+          "Cancel"
+        ],
+        "x.com.samsung.da.status": "Ready",
+        "x.com.samsung.da.progress": "100",
+        "x.com.samsung.da.result": "Fail",
+        "x.com.samsung.da.error": [
+          "DA_VCS_E_001"
+        ],
+        "href": "/selfcheck/vs/0"
+      }
+    },
+    {
+      "href": "/setting/dustbin/vs/0",
+      "rep": {
+        "x.com.samsung.da.autoEmpty": "On",
+        "x.com.samsung.da.autoClose": "not supporting",
+        "x.com.samsung.da.supportedDischargingTime": [
+          "1",
+          "3"
+        ],
+        "x.com.samsung.da.desiredDischargingTime": "2",
+        "href": "/setting/dustbin/vs/0",
+        "rt": [
+          "x.com.samsung.da.dustbinsetting"
+        ],
+        "if": [
+          "oic.if.baseline",
+          "oic.if.a"
+        ]
+      }
+    },
+    {
+      "href": "/status/cleanstation/vs/0",
+      "rep": {
+        "x.com.samsung.da.status": "Ready",
+        "x.com.samsung.da.uvcSupport": "Off",
+        "x.com.samsung.da.uvcFinishedTime": "N/A",
+        "x.com.samsung.da.emittedTime": "2026-09-11T09:19Z",
+        "x.com.samsung.da.uvcIntensive": "not supporting",
+        "x.com.samsung.da.stickStatus": "On",
+        "href": "/status/cleanstation/vs/0",
+        "rt": [
+          "x.com.samsung.da.cleanstationstatus"
+        ],
+        "if": [
+          "oic.if.baseline",
+          "oic.if.a"
+        ]
+      }
+    },
+    {
+      "href": "/status/stick/vs/0",
+      "rep": {
+        "x.com.samsung.da.stickoperationmode": "not operating",
+        "x.com.samsung.da.stickcleaningstatus": "FullyCharged",
+        "x.com.samsung.da.stickbattery": "100",
+        "x.com.samsung.da.stickdefaultcleanmode": "5",
+        "x.com.samsung.da.stickbleconnection": "On",
+        "href": "/status/stick/vs/0",
+        "rt": [
+          "x.com.samsung.da.stickstatus"
+        ],
+        "if": [
+          "oic.if.baseline",
+          "oic.if.a"
+        ]
+      }
+    },
+    {
+      "href": "/timezone/vs/0",
+      "rep": {
+        "timezoneid": "N/A",
+        "offset": "+08:00",
+        "DST": "OFF"
+      }
+    },
+    {
+      "href": "/wirelessinfo/vs/0",
+      "rep": {
+        "macaddressWiFi": "**REDACTED**",
+        "macaddressBLE": "**REDACTED**",
+        "connectedApSsid": "**REDACTED**"
+      }
+    }
+  ]
+}

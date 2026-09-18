@@ -61,6 +61,9 @@
       "door_open": {
         "name": "Sportello"
       },
+      "filter_blockage": {
+        "name": "Ostruzione del filtro"
+      },
       "filter_door_status": {
         "name": "Sportello filtro"
       },
@@ -1598,6 +1601,9 @@
       },
       "sound": {
         "name": "Suono"
+      },
+      "station_light": {
+        "name": "Luce della stazione"
       },
       "storm_wash": {
         "name": "Storm Wash+"

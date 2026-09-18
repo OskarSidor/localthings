@@ -61,6 +61,9 @@
       "door_open": {
         "name": "문"
       },
+      "filter_blockage": {
+        "name": "필터 막힘"
+      },
       "filter_door_status": {
         "name": "필터 도어"
       },
@@ -1598,6 +1601,9 @@
       },
       "sound": {
         "name": "소리"
+      },
+      "station_light": {
+        "name": "스테이션 조명"
       },
       "storm_wash": {
         "name": "스톰 워시+"

@@ -61,6 +61,9 @@
       "door_open": {
         "name": "Door"
       },
+      "filter_blockage": {
+        "name": "Filter blockage"
+      },
       "filter_door_status": {
         "name": "Filter door"
       },
@@ -1598,6 +1601,9 @@
       },
       "sound": {
         "name": "Sound"
+      },
+      "station_light": {
+        "name": "Station light"
       },
       "storm_wash": {
         "name": "Storm Wash+"

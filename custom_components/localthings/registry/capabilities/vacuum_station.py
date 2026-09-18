@@ -191,3 +191,46 @@ STICK_BODY = Capability(
         ),
     ),
 )
+
+
+# Station light and Do Not Disturb: two of the settings the VS9700 clean
+# station exposes (issue #478). Both are plain On/Off vendor switches on
+# their own hrefs; DND's value field is the "true"/"false" string, unlike
+# the "On"/"Off" the rest of this module uses. The schedule fields DND also
+# carries (start/end time, timezone) aren't modeled as entities -- only the
+# enable toggle -- so binding the href here covers it.
+LIGHTING = Capability(
+    href="/lighting/vs/0",
+    poll_tier="cold",
+    entities=(
+        SwitchDesc(
+            key="station_light",
+            field="x.com.samsung.da.lighting",
+            icon="mdi:led-on",
+            entity_category="config",
+            value_fn=lambda v: v == "On",
+            write_fn=lambda p, rep, href=None: (
+                ["lighting", "vs", "0"],
+                {"x.com.samsung.da.lighting": "On" if p == "On" else "Off"},
+            ),
+        ),
+    ),
+)
+
+DND = Capability(
+    href="/dnd/vs/0",
+    poll_tier="cold",
+    entities=(
+        SwitchDesc(
+            key="dnd",
+            field="x.com.samsung.da.value",
+            icon="mdi:bell-off",
+            entity_category="config",
+            value_fn=lambda v: v == "true",
+            write_fn=lambda p, rep, href=None: (
+                ["dnd", "vs", "0"],
+                {"x.com.samsung.da.value": "true" if p == "On" else "false"},
+            ),
+        ),
+    ),
+)

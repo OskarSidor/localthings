@@ -61,6 +61,9 @@
       "door_open": {
         "name": "Tür"
       },
+      "filter_blockage": {
+        "name": "Filterverstopfung"
+      },
       "filter_door_status": {
         "name": "Filtertür"
       },
@@ -1619,6 +1622,9 @@
       },
       "bubble_soak": {
         "name": "Blasen-Einweichen"
+      },
+      "station_light": {
+        "name": "Stationslicht"
       },
       "storm_wash": {
         "name": "Storm Wash+"
