@@ -688,7 +688,10 @@ FILTER_STATUS = Capability(
             device_class="problem",
             entity_category="diagnostic",
             icon="mdi:filter-remove",
-            value_fn=lambda v: v == "Blockage" if isinstance(v, str) else None,
+            # Case-insensitive, matching WATER_FILTER.filter_status's own
+            # .lower() -- a firmware casing variant ("blockage"/"BLOCKAGE")
+            # must not silently read as no-problem.
+            value_fn=lambda v: v.lower() == "blockage" if isinstance(v, str) else None,
         ),
     ),
 )

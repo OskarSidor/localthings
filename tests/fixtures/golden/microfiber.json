@@ -16,9 +16,6 @@
     "power_switch",
     "progress",
     "progress_percentage",
-    "remote_control",
-    "rinse_cycles",
-    "spin_speed",
-    "wash_temperature"
+    "remote_control"
   ]
 }
